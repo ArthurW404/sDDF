@@ -41,6 +41,7 @@ LDFLAGS := -L$(BOARD_DIR)/lib -L.
 LIBS := -lsel4cp -Tsel4cp.ld -lc
 
 IMAGE_FILE = $(BUILD_DIR)/loader.img
+UIMAGE_FILE = $(BUILD_DIR)/loader.uimage
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
 CFLAGS += -I$(BOARD_DIR)/include \
@@ -93,7 +94,7 @@ ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o
 BENCH_OBJS := benchmark/benchmark.o
 IDLE_OBJS := benchmark/idle.o
 
-all: directories $(IMAGE_FILE)
+all: $(UIMAGE_FILE)
 
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -133,6 +134,10 @@ directories:
 clean:
 	rm -f *.o *.elf .depend*
 	find . -name \*.o |xargs --no-run-if-empty rm
+
+
+$(UIMAGE_FILE): directories $(IMAGE_FILE)
+	mkimage -A arm64 -O linux -T kernel -C none -a 81000000 -e 81000000 -d $(IMAGE_FILE) $(UIMAGE_FILE)
 
 depend dep: .depend
 
