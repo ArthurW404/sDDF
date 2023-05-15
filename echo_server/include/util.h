@@ -7,6 +7,7 @@
 
 #define UART_REG(x) ((volatile uint32_t *)(UART_BASE + (x)))
 
+// IMX8MM-evk
 // #define UART_BASE 0x5000000 //0x30890000 in hardware on imx8mm. 
 // #define STAT 0x98
 // #define TRANSMIT 0x40

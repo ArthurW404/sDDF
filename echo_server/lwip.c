@@ -322,6 +322,21 @@ void init(void)
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": elf PD init function running\n");
     print("my serial driver| ==> hello\n");
+
+    gpt_init();
+
+    u32_t start = sys_now();
+    puthex64((uint64_t) start);
+    print("\n");
+
+    // wait 5 seconds
+    for (u32_t curr = sys_now(); curr - start < 5000000; curr = sys_now()) {
+
+    }
+    print("Now\n");
+    u32_t end = sys_now();
+    puthex64((uint64_t) end);
+    print("\n");
 }
 
 // void init(void)

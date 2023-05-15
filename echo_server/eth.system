@@ -5,7 +5,11 @@
     <memory_region name="uart" size="0x10_000" phys_addr="0x03100000" />
     <memory_region name="eth0" size="0x10_000" phys_addr="0x30be0000" />
 
-    <memory_region name="timer" size="0x10_000" phys_addr="0x302d0000" />
+    <!-- <memory_region name="timer" size="0x10_000" phys_addr="0x302d0000" /> -->
+
+    <!-- TX2 TMR0 register location -->
+    <memory_region name="timer" size="0xe0_000" phys_addr="0x03010000" />
+
     <memory_region name="hw_ring_buffer" size="0x1_000" />
     <memory_region name="shared_dma" size="0x200_000" page_size="0x200_000" />
 
@@ -67,7 +71,8 @@
         <!-- shared memory used for benchmarking -->
         <map mr="cyclecounters" vaddr="0x5_010_000" perms="rw" cached="true" setvar_vaddr="cyclecounters_vaddr" />
 
-        <irq irq="87" id="1" /> <!-- timer interrupt -->
+        <!-- timer interrupt -->
+        <!-- <irq irq="87" id="1" /> -->
     </protection_domain>
 
     <protection_domain name="benchIdle" priority="1">
