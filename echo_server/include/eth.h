@@ -5,205 +5,253 @@
 
 #pragma once
 
-#define ECR_RESET       (1UL)
-#define ECR_DBSWP       (1UL << 8) /* descriptor byte swapping enable */
-#define MIBC_DIS        (1UL << 31)
-#define MIBC_IDLE       (1UL << 30)
-#define MIBC_CLEAR      (1UL << 29)
-#define TIPG            8
-#define RACC_LINEDIS    (1UL << 6) /* Discard frames with MAC layer errors */
-#define RCR_MII_MODE    (1UL << 2) /* This field must always be set */
-#define RCR_RGMII_EN    (1UL << 6) /* RGMII  Mode Enable. RMII must not be set */
-#define ECR_ETHEREN     2
-#define ECR_SPEED       (1UL << 5) /* Enable 1000Mbps */
-#define PAUSE_OPCODE_FIELD (1UL << 16)
-#define TCR_FDEN        (1UL << 2) /* Full duplex enable */
-#define TX_ICEN         (1UL << 31)
+#define BIT(n) (1ul<<(n))
+
+#define TX2_DEFAULT_MAC "\x00\x04\x4b\xc5\x67\x70"
+
+#define CONFIG_SYS_CACHELINE_SIZE 64
+
+#ifdef CONFIG_SYS_CACHELINE_SIZE
+#define ARCH_DMA_MINALIGN   CONFIG_SYS_CACHELINE_SIZE
+#else
+#define ARCH_DMA_MINALIGN   16
+#endif
 
 
-#define NETIRQ_BABR     (1UL << 30) /* Babbling Receive Error          */
-#define NETIRQ_BABT     (1UL << 29) /* Babbling Transmit Error         */
-#define NETIRQ_GRA      (1UL << 28) /* Graceful Stop Complete          */
-#define NETIRQ_TXF      (1UL << 27) /* Transmit Frame Interrupt        */
-#define NETIRQ_TXB      (1UL << 26) /* Transmit Buffer Interrupt       */
-#define NETIRQ_RXF      (1UL << 25) /* Receive Frame Interrupt         */
-#define NETIRQ_RXB      (1UL << 24) /* Receive Buffer Interrupt        */
-#define NETIRQ_MII      (1UL << 23) /* MII Interrupt                   */
-#define NETIRQ_EBERR    (1UL << 22) /* Ethernet bus error              */
-#define NETIRQ_LC       (1UL << 21) /* Late Collision                  */
-#define NETIRQ_RL       (1UL << 20) /* Collision Retry Limit           */
-#define NETIRQ_UN       (1UL << 19) /* Transmit FIFO Underrun          */
-#define NETIRQ_PLR      (1UL << 18) /* Payload Receive Error           */
-#define NETIRQ_WAKEUP   (1UL << 17) /* Node Wakeup Request Indication  */
-#define NETIRQ_TS_AVAIL (1UL << 16) /* Transmit Timestamp Available    */
-#define NETIRQ_TS_TIMER (1UL << 15) /* Timestamp Timer                 */
+#define __ALIGN_MASK(x,mask)    (((x)+(mask))&~(mask))
 
-#define IRQ_MASK    (NETIRQ_RXF | NETIRQ_TXF | NETIRQ_EBERR)
-
-#define RXD_EMPTY       (1UL << 15)
-#define WRAP            (1UL << 13)
-#define TXD_READY       (1UL << 15)
-#define TXD_ADDCRC      (1UL << 10)
-#define TXD_LAST        (1UL << 11)
+#define EQOS_ALIGN(x,a)      __ALIGN_MASK((x),(typeof(x))(a)-1)
+#define EQOS_MAX_PACKET_SIZE    EQOS_ALIGN(1568, ARCH_DMA_MINALIGN)
 
 
-#define RDAR_RDAR       (1UL << 24) /* RX descriptor active */
-#define TDAR_TDAR       (1UL << 24) /* TX descriptor active */
+#define EQOS_MAC_REGS_BASE 0x000
 
-#define TACC_IPCHK      (1UL << 3) /* If an IP frame is transmitted, the checksum is inserted automatically */
-#define TACC_PROCHK     (1UL << 4)
-
-#define STRFWD          (1UL << 8) /* Store forward must be enabled for checksums. */
-
-#define RACC_IPDIS      (1UL << 1) /* check the IP checksum and discard if wrong. */
-#define RACC_PRODIS     (1UL << 2) /* check protocol checksum and discard if wrong. */
-
-#define ICFT(x)       (((x) & 0xff) << 20)
-#define RCR_MAX_FL(x) (((x) & 0x3fff) << 16) /* Maximum Frame Length */
-
-/* Hardware registers */
-struct mib_regs {
-    /* NOTE: Counter not implemented because it is not applicable (read 0 always).*/
-    uint32_t rmon_t_drop;        /* 00 Register Count of frames not counted correctly */
-    uint32_t rmon_t_packets;     /* 04 RMON Tx packet count */
-    uint32_t rmon_t_bc_pkt;      /* 08 RMON Tx Broadcast Packets */
-    uint32_t rmon_t_mc_pkt;      /* 0C RMON Tx Multicast Packets */
-    uint32_t rmon_t_crc_align;   /* 10 RMON Tx Packets w CRC/Align error */
-    uint32_t rmon_t_undersize;   /* 14 RMON Tx Packets < 64 bytes, good CRC */
-    uint32_t rmon_t_oversize;    /* 18 RMON Tx Packets > MAX_FL bytes, good CRC */
-    uint32_t rmon_t_frag;        /* 1C RMON Tx Packets < 64 bytes, bad CRC */
-    uint32_t rmon_t_jab;         /* 20 RMON Tx Packets > MAX_FL bytes, bad CRC*/
-    uint32_t rmon_t_col;         /* 24 RMON Tx collision count */
-    uint32_t rmon_t_p64;         /* 28 RMON Tx 64 byte packets */
-    uint32_t rmon_t_p65to127n;   /* 2C RMON Tx 65 to 127 byte packets */
-    uint32_t rmon_t_p128to255n;  /* 30 RMON Tx 128 to 255 byte packets */
-    uint32_t rmon_t_p256to511;   /* 34 RMON Tx 256 to 511 byte packets */
-    uint32_t rmon_t_p512to1023;  /* 38 RMON Tx 512 to 1023 byte packets */
-    uint32_t rmon_t_p1024to2047; /* 3C RMON Tx 1024 to 2047 byte packets */
-    uint32_t rmon_t_p_gte2048;   /* 40 RMON Tx packets w > 2048 bytes */
-    uint32_t rmon_t_octets;      /* 44 RMON Tx Octets */
-    /* NOTE: Counter not implemented because it is not applicable (read 0 always). */
-    uint32_t ieee_t_drop;        /* 48 Count of frames not counted correctly */
-    uint32_t ieee_t_frame_ok;    /* 4C Frames Transmitted OK */
-    uint32_t ieee_t_1col;        /* 50 Frames Transmitted with Single Collision */
-    uint32_t ieee_t_mcol;        /* 54 Frames Transmitted with Multiple Collisions */
-    uint32_t ieee_t_def;         /* 58 Frames Transmitted after Deferral Delay */
-    uint32_t ieee_t_lcol;        /* 5C Frames Transmitted with Late Collision */
-    uint32_t ieee_t_excol;       /* 60 Frames Transmitted with Excessive Collisions */
-    uint32_t ieee_t_macerr;      /* 64 Frames Transmitted with Tx FIFO Underrun */
-    uint32_t ieee_t_cserr;       /* 68 Frames Transmitted with Carrier Sense Error */
-    /* NOTE: Counter not implemented because there is no SQE information available (read 0 always). */
-    uint32_t ieee_t_sqe;         /* 6C Frames Transmitted with SQE Error */
-    uint32_t ieee_t_fdxfc;       /* 70 Flow Control Pause frames transmitted */
-    /* NOTE: Counts total octets (includes header and FCS fields). */
-    uint32_t ieee_t_octets_ok;   /* 74 Octet count for Frames Transmitted w/o Error */
-    uint32_t res0[3];
-    uint32_t rmon_r_packets;     /* 84 RMON Rx packet count */
-    uint32_t rmon_r_bc_pkt;      /* 88 RMON Rx Broadcast Packets */
-    uint32_t rmon_r_mc_pkt;      /* 8C RMON Rx Multicast Packets */
-    uint32_t rmon_r_crc_align;   /* 90 RMON Rx Packets w CRC/Align error */
-    uint32_t rmon_r_undersize;   /* 94 RMON Rx Packets < 64 bytes, good CRC */
-    uint32_t rmon_r_oversize;    /* 98 RMON Rx Packets > MAX_FL, good CRC */
-    uint32_t rmon_r_frag;        /* 9C RMON Rx Packets < 64 bytes, bad CRC */
-    uint32_t rmon_r_jab;         /* A0 RMON Rx Packets > MAX_FL bytes, bad CRC  */
-    uint32_t rmon_r_resvd_0;     /* A4 Reserved */
-    uint32_t rmon_r_p64;         /* A8 RMON Rx 64 byte packets */
-    uint32_t rmon_r_p65to127;    /* AC RMON Rx 65 to 127 byte packets */
-    uint32_t rmon_r_p128to255;   /* B0 RMON Rx 128 to 255 byte packets */
-    uint32_t rmon_r_p256to511;   /* B4 RMON Rx 256 to 511 byte packets */
-    uint32_t rmon_r_p512to1023;  /* B8 RMON Rx 512 to 1023 byte packets */
-    uint32_t rmon_r_p1024to2047; /* BC RMON Rx 1024 to 2047 byte packets */
-    uint32_t rmon_r_p_gte2048;   /* C0 RMON Rx packets w > 2048 bytes */
-    uint32_t rmon_r_octets;      /* C4 RMON Rx Octets */
-    /* NOTE: Counter increments if a frame with invalid/missing SFD character is
-     * detected and has been dropped. None of the other counters increments if
-     * this counter increments. */
-    uint32_t ieee_r_drop;        /* C8 Count of frames not counted correctly */
-    uint32_t ieee_r_frame_ok;    /* CC Frames Received OK */
-    uint32_t ieee_r_crc;         /* D0 Frames Received with CRC Error */
-    uint32_t ieee_r_align;       /* D4 Frames Received with Alignment Error */
-    /* Assume they mean D8... */
-    uint32_t ieee_r_macerr;      /* D7 Receive FIFO Overflow count */
-    uint32_t ieee_r_fdxfc;       /* DC Flow Control Pause frames received */
-    /* NOTE: Counts total octets (includes header and FCS fields ) */
-    uint32_t ieee_r_octets_ok;   /* E0 Octet count for Frames Rcvd w/o Error */
-    uint32_t res1[7];
+struct eqos_mac_regs {
+    uint32_t configuration;             /* 0x000 */
+    uint32_t unused_004[(0x070 - 0x004) / 4];   /* 0x004 */
+    uint32_t q0_tx_flow_ctrl;           /* 0x070 */
+    uint32_t unused_070[(0x090 - 0x074) / 4];   /* 0x074 */
+    uint32_t rx_flow_ctrl;              /* 0x090 */
+    uint32_t unused_094;                /* 0x094 */
+    uint32_t txq_prty_map0;             /* 0x098 */
+    uint32_t unused_09c;                /* 0x09c */
+    uint32_t rxq_ctrl0;             /* 0x0a0 */
+    uint32_t rxq_ctrl1;                /* 0x0a4 */
+    uint32_t rxq_ctrl2;             /* 0x0a8 */
+    uint32_t unused_0ac[(0x0dc - 0x0ac) / 4];   /* 0x0ac */
+    uint32_t us_tic_counter;            /* 0x0dc */
+    uint32_t unused_0e0[(0x11c - 0x0e0) / 4];   /* 0x0e0 */
+    uint32_t hw_feature0;               /* 0x11c */
+    uint32_t hw_feature1;               /* 0x120 */
+    uint32_t hw_feature2;               /* 0x124 */
+    uint32_t unused_128[(0x200 - 0x128) / 4];   /* 0x128 */
+    uint32_t mdio_address;              /* 0x200 */
+    uint32_t mdio_data;             /* 0x204 */
+    uint32_t unused_208[(0x300 - 0x208) / 4];   /* 0x208 */
+    uint32_t address0_high;             /* 0x300 */
+    uint32_t address0_low;              /* 0x304 */
 };
 
-struct enet_regs {
-    /* Configuration */
-    uint32_t res0[1];
-    uint32_t eir;    /* 004 Interrupt Event Register */
-    uint32_t eimr;   /* 008 Interrupt Mask Register */
-    uint32_t res1[1];
-    uint32_t rdar;   /* 010 Receive Descriptor Active Register */
-    uint32_t tdar;   /* 014 Transmit Descriptor Active Register */
-    uint32_t res2[3];
-    uint32_t ecr;    /* 024 Ethernet Control Register */
-    uint32_t res3[6];
-    uint32_t mmfr;   /* 040 MII Management Frame Register */
-    uint32_t mscr;   /* 044 MII Speed Control Register */
-    uint32_t res4[7];
-    uint32_t mibc;   /* 064 MIB Control Register */
-    uint32_t res5[7];
-    uint32_t rcr;    /* 084 Receive Control Register */
-    uint32_t res6[15];
-    uint32_t tcr;    /* 0C4 Transmit Control Register */
-    uint32_t res7[7];
-    uint32_t palr;   /* 0E4 Physical Address Lower Register */
-    uint32_t paur;   /* 0E8 Physical Address Upper Register */
-    uint32_t opd;    /* 0EC Opcode/Pause Duration Register */
-    uint32_t txic0;
-    uint32_t txic1;
-    uint32_t txic2;
-    uint32_t res8[7];
-    uint32_t iaur;   /* 118 Descriptor Individual Upper Address Register */
-    uint32_t ialr;   /* 11C Descriptor Individual Lower Address Register */
-    uint32_t gaur;   /* 120 Descriptor Group Upper Address Register */
-    uint32_t galr;   /* 124 Descriptor Group Lower Address Register */
-    uint32_t res9[7];
-    uint32_t tfwr;   /* 144 Transmit FIFO Watermark Register */
-    uint32_t res10[14];
-    uint32_t rdsr;   /* 180 Receive Descriptor Ring Start Register */
-    uint32_t tdsr;   /* 184 Transmit Buffer Descriptor Ring Start Register */
-    uint32_t mrbr;   /* 188 Maximum Receive Buffer Size Register */
-    uint32_t res12[1];
-    uint32_t rsfl;   /* 190 Receive FIFO Section Full Threshold */
-    uint32_t rsem;   /* 194 Receive FIFO Section Empty Threshold */
-    uint32_t raem;   /* 198 Receive FIFO Almost Empty Threshold */
-    uint32_t rafl;   /* 19C Receive FIFO Almost Full Threshold */
-    uint32_t tsem;   /* 1A0 Transmit FIFO Section Empty Threshold */
-    uint32_t taem;   /* 1A4 Transmit FIFO Almost Empty Threshold */
-    uint32_t tafl;   /* 1A8 Transmit FIFO Almost Full Threshold */
-    uint32_t tipg;   /* 1AC Transmit Inter-Packet Gap */
-    uint32_t ftrl;   /* 1B0 Frame Truncation Length */
-    uint32_t res13[3];
-    uint32_t tacc;   /* 1C0 Transmit Accelerator Function Configuration */
-    uint32_t racc;   /* 1C4 Receive Accelerator Function Configuration */
-    uint32_t res14[14];
-    /* 0x200: Statistics counters MIB block RFC 2819 */
-    struct mib_regs mib;
-    uint32_t res15[64];
-    /* 0x400: 1588 adjustable timer (TSM) and 1588 frame control */
-    uint32_t atcr;   /* 400 Timer Control Register */
-    uint32_t atvr;   /* 404 Timer Value Register */
-    uint32_t atoff;  /* 408 Timer Offset Register */
-    uint32_t atper;  /* 40C Timer Period Register */
-    uint32_t atcor;  /* 410 Timer Correction Register */
-    uint32_t atinc;  /* 414 Time-Stamping Clock Period Register */
-    uint32_t atstmp; /* 418 Timestamp of Last Transmitted Frame */
-    uint32_t res16[121];
+#define EQOS_MAC_CONFIGURATION_GPSLCE           BIT(23)
+#define EQOS_MAC_CONFIGURATION_CST          BIT(21)
+#define EQOS_MAC_CONFIGURATION_ACS          BIT(20)
+#define EQOS_MAC_CONFIGURATION_WD           BIT(19)
+#define EQOS_MAC_CONFIGURATION_JD           BIT(17)
+#define EQOS_MAC_CONFIGURATION_JE           BIT(16)
+#define EQOS_MAC_CONFIGURATION_PS           BIT(15)
+#define EQOS_MAC_CONFIGURATION_FES          BIT(14)
+#define EQOS_MAC_CONFIGURATION_DM           BIT(13)
+#define EQOS_MAC_CONFIGURATION_TE           BIT(1)
+#define EQOS_MAC_CONFIGURATION_RE           BIT(0)
 
-    /* 0x600: Capture/compare block */
-    uint32_t res17[1];
-    uint32_t tgsr;   /* 604 Timer Global Status Register */
-    uint32_t tcsr0;  /* 608 Timer Control Status Register */
-    uint32_t tccr0;  /* 60C Timer Compare Capture Register */
-    uint32_t tcsr1;  /* 610 Timer Control Status Register */
-    uint32_t tccr1;  /* 614 Timer Compare Capture Register */
-    uint32_t tcsr2;  /* 618 Timer Control Status Register */
-    uint32_t tccr2;  /* 61C Timer Compare Capture Register */
-    uint32_t tcsr3;  /* 620 Timer Control Status Register */
-    uint32_t tccr3;  /* 624 Timer Compare Capture Register */
+#define EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT       16
+#define EQOS_MAC_Q0_TX_FLOW_CTRL_PT_MASK        0xffff
+#define EQOS_MAC_Q0_TX_FLOW_CTRL_TFE            BIT(1)
+
+#define EQOS_MAC_RX_FLOW_CTRL_RFE           BIT(0)
+
+#define EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_SHIFT      0
+#define EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_MASK       0xff
+
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT         0
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_MASK          3
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_NOT_ENABLED       0
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_ENABLED_DCB       2
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_ENABLED_AV        1
+
+#define EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT          0
+#define EQOS_MAC_RXQ_CTRL2_PSRQ0_MASK           0xff
+
+#define EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_SHIFT       6
+#define EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_MASK        0x1f
+#define EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_SHIFT       0
+#define EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_MASK        0x1f
+
+#define EQOS_MAC_MDIO_ADDRESS_PA_SHIFT          21
+#define EQOS_MAC_MDIO_ADDRESS_RDA_SHIFT         16
+#define EQOS_MAC_MDIO_ADDRESS_CR_SHIFT          8
+#define EQOS_MAC_MDIO_ADDRESS_CR_20_35          2
+#define EQOS_MAC_MDIO_ADDRESS_CR_250_300        5
+#define EQOS_MAC_MDIO_ADDRESS_SKAP          BIT(4)
+#define EQOS_MAC_MDIO_ADDRESS_GOC_SHIFT         2
+#define EQOS_MAC_MDIO_ADDRESS_GOC_READ          3
+#define EQOS_MAC_MDIO_ADDRESS_GOC_WRITE         1
+#define EQOS_MAC_MDIO_ADDRESS_C45E          BIT(1)
+#define EQOS_MAC_MDIO_ADDRESS_GB            BIT(0)
+
+#define EQOS_MAC_MDIO_DATA_GD_MASK          0xffff
+
+#define EQOS_MTL_REGS_BASE 0xd00
+struct eqos_mtl_regs {
+    uint32_t txq0_operation_mode;           /* 0xd00 */
+    uint32_t unused_d04;                /* 0xd04 */
+    uint32_t txq0_debug;                /* 0xd08 */
+    uint32_t unused_d0c[(0xd18 - 0xd0c) / 4];   /* 0xd0c */
+    uint32_t txq0_quantum_weight;           /* 0xd18 */
+    uint32_t unused_d1c[(0xd30 - 0xd1c) / 4];   /* 0xd1c */
+    uint32_t rxq0_operation_mode;           /* 0xd30 */
+    uint32_t unused_d34;                /* 0xd34 */
+    uint32_t rxq0_debug;                /* 0xd38 */
 };
 
+#define EQOS_MTL_TXQ0_OPERATION_MODE_TQS_SHIFT      16
+#define EQOS_MTL_TXQ0_OPERATION_MODE_TQS_MASK       0x1ff
+#define EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_SHIFT    2
+#define EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_MASK     3
+#define EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_ENABLED  2
+#define EQOS_MTL_TXQ0_OPERATION_MODE_TSF        BIT(1)
+#define EQOS_MTL_TXQ0_OPERATION_MODE_FTQ        BIT(0)
+
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RQS_SHIFT      20
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RQS_MASK       0x3ff
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RFD_SHIFT      14
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RFD_MASK       0x3f
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RFA_SHIFT      8
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RFA_MASK       0x3f
+#define EQOS_MTL_RXQ0_OPERATION_MODE_EHFC       BIT(7)
+#define EQOS_MTL_RXQ0_OPERATION_MODE_RSF        BIT(5)
+
+#define EQOS_DMA_REGS_BASE 0x1000
+struct eqos_dma_regs {
+    uint32_t mode;                  /* 0x1000 */
+    uint32_t sysbus_mode;               /* 0x1004 */
+    uint32_t dma_control[(0x1100 - 0x1008) / 4];    /* 0x1008 */
+    uint32_t ch0_control;               /* 0x1100 */
+    uint32_t ch0_tx_control;            /* 0x1104 */
+    uint32_t ch0_rx_control;            /* 0x1108 */
+    uint32_t unused_110c;               /* 0x110c */
+    uint32_t ch0_txdesc_list_haddress;      /* 0x1110 */
+    uint32_t ch0_txdesc_list_address;       /* 0x1114 */
+    uint32_t ch0_rxdesc_list_haddress;      /* 0x1118 */
+    uint32_t ch0_rxdesc_list_address;       /* 0x111c */
+    uint32_t ch0_txdesc_tail_pointer;       /* 0x1120 */
+    uint32_t unused_1124;               /* 0x1124 */
+    uint32_t ch0_rxdesc_tail_pointer;       /* 0x1128 */
+    uint32_t ch0_txdesc_ring_length;        /* 0x112c */
+    uint32_t ch0_rxdesc_ring_length;        /* 0x1130 */
+    uint32_t ch0_dma_ie;                    /* 0x1134 */
+    uint32_t ch0_dma_rx_int_wd_timer;                    /* 0x1138 */
+};
+
+#define EQOS_DMA_MODE_SWR               BIT(0)
+
+#define EQOS_DMA_SYSBUS_MODE_RD_OSR_LMT_SHIFT       16
+#define EQOS_DMA_SYSBUS_MODE_RD_OSR_LMT_MASK        0xf
+#define EQOS_DMA_SYSBUS_MODE_EAME           BIT(11)
+#define EQOS_DMA_SYSBUS_MODE_BLEN16         BIT(3)
+#define EQOS_DMA_SYSBUS_MODE_BLEN8          BIT(2)
+#define EQOS_DMA_SYSBUS_MODE_BLEN4          BIT(1)
+
+#define EQOS_DMA_CH0_CONTROL_PBLX8          BIT(16)
+
+#define EQOS_DMA_CH0_TX_CONTROL_TXPBL_SHIFT     16
+#define EQOS_DMA_CH0_TX_CONTROL_TXPBL_MASK      0x3f
+#define EQOS_DMA_CH0_TX_CONTROL_OSP         BIT(4)
+#define EQOS_DMA_CH0_TX_CONTROL_ST          BIT(0)
+
+#define EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT     16
+#define EQOS_DMA_CH0_RX_CONTROL_RXPBL_MASK      0x3f
+#define EQOS_DMA_CH0_RX_CONTROL_RBSZ_SHIFT      1
+#define EQOS_DMA_CH0_RX_CONTROL_RBSZ_MASK       0x3fff
+#define EQOS_DMA_CH0_RX_CONTROL_SR          BIT(0)
+#define DWCEQOS_DMA_CH_CTRL_START           BIT(0)
+/* These registers are Tegra186-specific */
+#define EQOS_TEGRA186_REGS_BASE 0x8800
+struct eqos_tegra186_regs {
+    uint32_t sdmemcomppadctrl;          /* 0x8800 */
+    uint32_t auto_cal_config;           /* 0x8804 */
+    uint32_t unused_8808;               /* 0x8808 */
+    uint32_t auto_cal_status;           /* 0x880c */
+};
+
+#define EQOS_SDMEMCOMPPADCTRL_PAD_E_INPUT_OR_E_PWRD BIT(31)
+
+#define EQOS_AUTO_CAL_CONFIG_START          BIT(31)
+#define EQOS_AUTO_CAL_CONFIG_ENABLE         BIT(29)
+#define EQOS_AUTO_CAL_STATUS_ACTIVE         BIT(31)
+
+#define EQOS_DESCRIPTOR_WORDS   4
+#define EQOS_DESCRIPTOR_SIZE    (EQOS_DESCRIPTOR_WORDS * 4)
+/* We assume ARCH_DMA_MINALIGN >= 16; 16 is the EQOS HW minimum */
+#define EQOS_DESCRIPTOR_ALIGN   ARCH_DMA_MINALIGN
+#define EQOS_DESCRIPTORS_NUM    (EQOS_DESCRIPTORS_TX + EQOS_DESCRIPTORS_RX)
+#define EQOS_DESCRIPTORS_SIZE   EQOS_ALIGN(EQOS_DESCRIPTORS_NUM * \
+                      EQOS_DESCRIPTOR_SIZE, ARCH_DMA_MINALIGN)
+#define EQOS_BUFFER_ALIGN   ARCH_DMA_MINALIGN
+
+//from linux
+// #define EQOS_RX_BUFFER_SIZE  2048
+#define EQOS_RX_BUFFER_SIZE (EQOS_DESCRIPTORS_RX * EQOS_MAX_PACKET_SIZE)
+
+struct eqos_config {
+    bool reg_access_always_ok;
+    int mdio_wait;
+    int swr_wait;
+    int config_mac;
+    int config_mac_mdio;
+};
+
+/* ARP hardware address length */
+#define ARP_HLEN 6
+
+#define REG_DWCEQOS_ETH_MMC_CONTROL      0x0700
+#define REG_DWCEQOS_MMC_CNTFREEZ         BIT(3)
+
+#define REG_DWCEQOS_DMA_CH0_STA          0x1160
+#define DWCEQOS_DMA_IS_DC0IS             BIT(0)
+#define DWCEQOS_DMA_IS_MTLIS             BIT(16)
+#define DWCEQOS_DDWCEQOSMA_IS_MACIS             BIT(17)
+#define DWCEQOS_DMA_CH0_IS_TI            BIT(0)
+#define DWCEQOS_DMA_CH0_IS_RI            BIT(6)
+#define DWCEQOS_MAC_IS_MMC_INT           BIT(8)
+#define DWCEQOS_MAC_IS_LPI_INT           BIT(5)
+
+#define DWCEQOS_DMA_CH0_IE_NIE           BIT(15)
+#define DWCEQOS_DMA_CH0_IE_AIE           BIT(14)
+#define DWCEQOS_DMA_CH0_IE_RIE           BIT(6)
+#define DWCEQOS_DMA_CH0_IE_TIE           BIT(0)
+#define DWCEQOS_DMA_CH0_IE_FBEE          BIT(12)
+#define DWCEQOS_DMA_CH0_IE_RBUE          BIT(7)
+#define DWCEQOS_DMA_CH0_IE_RWTE          BIT(9)
+
+#define MAC_LPS_RES_WR_MASK_20 (uint32_t)(0xfffff)
+#define  MAC_LPS_MASK_20 (uint32_t)(0xfff)
+#define  MAC_LPS_MASK_10 (uint32_t)(0x3f)
+#define MAC_LPS_RES_WR_MASK_10 (uint32_t)(0xffff03ff)
+#define  MAC_LPS_MASK_4 (uint32_t)(0xf)
+#define MAC_LPS_RES_WR_MASK_4 (uint32_t)(0xffffff0f)
+#define MAC_LPS_PLSEN_MASK (uint32_t)(0x1)
+#define MAC_LPS_PLSEN_WR_MASK (uint32_t)(0xfffbffff)
+
+#define DWCEQOS_MAC_CFG_ACS              BIT(20)
+#define DWCEQOS_MAC_CFG_JD               BIT(17)
+#define DWCEQOS_MAC_CFG_JE               BIT(16)
+#define DWCEQOS_MAC_CFG_PS               BIT(15)
+#define DWCEQOS_MAC_CFG_FES              BIT(14)
+/* full duplex mode? */
+#define DWCEQOS_MAC_CFG_DM               BIT(13)
+#define DWCEQOS_MAC_CFG_DO               BIT(10)
+#define DWCEQOS_MAC_CFG_TE               BIT(1)
+/* Check sum bit */
+#define DWCEQOS_MAC_CFG_IPC              BIT(27)
+#define DWCEQOS_MAC_CFG_RE               BIT(0)

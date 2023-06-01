@@ -3,7 +3,10 @@
 
     <!-- <memory_region name="uart" size="0x10_000" phys_addr="0x30890000" /> -->
     <memory_region name="uart" size="0x10_000" phys_addr="0x03100000" />
-    <memory_region name="eth0" size="0x10_000" phys_addr="0x30be0000" />
+
+
+    <memory_region name="eth0" size="0x10_000" phys_addr="0x02490000" />
+    <!-- <memory_region name="eth0" size="0x10_000" phys_addr="0x30be0000" /> -->
 
     <!-- <memory_region name="timer" size="0x10_000" phys_addr="0x302d0000" /> -->
 

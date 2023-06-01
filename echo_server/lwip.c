@@ -330,9 +330,10 @@ void init(void)
     print("\n");
 
     // wait 5 seconds
-    for (u32_t curr = sys_now(); curr - start < 5000000; curr = sys_now()) {
+    for (u32_t curr = sys_now(); curr - start < 5000; curr = sys_now()) {
 
     }
+
     print("Now\n");
     u32_t end = sys_now();
     puthex64((uint64_t) end);
