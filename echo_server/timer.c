@@ -66,6 +66,7 @@ static struct tmr_map *gpt;
 
 #define LWIP_TICK_MS 10
 #define NS_IN_MS 1000000ULL
+#define US_IN_MS 1000ULL
 #define NS_IN_US 1000ULL
 
 /* 0-28 bits are for value, n + 1 trigger mode */
@@ -74,6 +75,7 @@ static struct tmr_map *gpt;
 
 int timers_initialised = 0;
 
+// Gets time in microsecond
 static uint64_t get_ticks(void) {
     /* FIXME: If an overflow interrupt happens in the middle here we are in trouble */
     // uint64_t overflow = overflow_count;
@@ -89,7 +91,7 @@ static uint64_t get_ticks(void) {
     struct tmrus_map *tmrus_map = (void *)(gpt_regs + TMRUS_OFFSET);
 
     // print("cntr_1us = ");
-    uint64_t num = tmrus_map->cntr_1us * NS_IN_US;
+    // uint64_t num = tmrus_map->cntr_1us * NS_IN_US;
     // puthex64(num);
     // print("\n");
 
@@ -132,6 +134,7 @@ static uint64_t get_ticks(void) {
     // return (overflow << 32) | cnt;
 }
 
+// returns time in milisecond
 u32_t sys_now(void)
 {
     if (!timers_initialised) {
@@ -140,7 +143,7 @@ u32_t sys_now(void)
         return -1;
     } else {
         uint64_t time_now = get_ticks();
-        return time_now;
+        return time_now / US_IN_MS;
     }
 }
 
