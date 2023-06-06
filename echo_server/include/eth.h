@@ -255,3 +255,28 @@ struct eqos_config {
 /* Check sum bit */
 #define DWCEQOS_MAC_CFG_IPC              BIT(27)
 #define DWCEQOS_MAC_CFG_RE               BIT(0)
+
+struct eqos_priv {
+    const struct eqos_config *config;
+    uintptr_t regs;
+    struct eqos_mac_regs volatile *mac_regs;
+    struct eqos_mtl_regs volatile *mtl_regs;
+    struct eqos_dma_regs volatile *dma_regs;
+    struct eqos_tegra186_regs volatile*tegra186_regs;
+    // struct clock *clk_master_bus;
+    // struct clock *clk_rx;
+    // struct clock *clk_ptp_ref;
+    // struct clock *clk_tx;
+    // struct clock *clk_slave_bus;
+    // struct mii_dev *mii;
+    // struct phy_device *phy;
+    // uintptr_t last_rx_desc;
+    // uintptr_t last_tx_desc;
+    // unsigned char enetaddr[ARP_HLEN];
+    // bool reg_access_ok;
+    // ps_io_ops_t *tx2_io_ops;
+    // gpio_sys_t *gpio_sys;
+    // gpio_t gpio;
+    // reset_sys_t *reset_sys;
+    // clock_sys_t *clock_sys;
+};

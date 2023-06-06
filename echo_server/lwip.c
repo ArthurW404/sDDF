@@ -279,7 +279,9 @@ static err_t ethernet_init(struct netif *netif)
 
 static void netif_status_callback(struct netif *netif)
 {
+    print("\n\n ====== here ======\n\n");
     if (dhcp_supplied_address(netif)) {
+        print("\n\n ====== here2 ======\n\n");
         print("DHCP request finished, IP address for netif ");
         print(netif->name);
         print(" is: ");
@@ -317,91 +319,91 @@ void init_post(void)
     sel4cp_dbg_puts(": init complete -- waiting for notification\n");
 }
 
-void init(void) 
-{
-    sel4cp_dbg_puts(sel4cp_name);
-    sel4cp_dbg_puts(": elf PD init function running\n");
-    print("my serial driver| ==> hello\n");
-
-    gpt_init();
-
-    u32_t start = sys_now();
-    puthex64((uint64_t) start);
-    print("\n");
-
-    // wait 5 seconds
-    for (u32_t curr = sys_now(); curr - start < 5000; curr = sys_now()) {
-
-    }
-
-    print("Now\n");
-    u32_t end = sys_now();
-    puthex64((uint64_t) end);
-    print("\n");
-}
-
-// void init(void)
+// void init(void) 
 // {
 //     sel4cp_dbg_puts(sel4cp_name);
 //     sel4cp_dbg_puts(": elf PD init function running\n");
-
-//     /* Set up shared memory regions */
-//     ring_init(&state.rx_ring, (ring_buffer_t *)rx_free, (ring_buffer_t *)rx_used, NULL, 1);
-//     ring_init(&state.tx_ring, (ring_buffer_t *)tx_free, (ring_buffer_t *)tx_used, NULL, 1);
-
-
-//     for (int i = 0; i < NUM_BUFFERS - 1; i++) {
-//         ethernet_buffer_t *buffer = &state.buffer_metadata[i];
-//         *buffer = (ethernet_buffer_t) {
-//             .buffer = shared_dma_vaddr + (BUF_SIZE * i),
-//             .size = BUF_SIZE,
-//             .origin = ORIGIN_RX_QUEUE,
-//             .index = i,
-//             .in_use = false,
-//         };
-//         enqueue_free(&state.rx_ring, buffer->buffer, BUF_SIZE, buffer);
-//     }
-
-//     for (int i = 0; i < NUM_BUFFERS - 1; i++) {
-//         ethernet_buffer_t *buffer = &state.buffer_metadata[i + NUM_BUFFERS];
-//         *buffer = (ethernet_buffer_t) {
-//             .buffer = shared_dma_vaddr + (BUF_SIZE * (i + NUM_BUFFERS)),
-//             .size = BUF_SIZE,
-//             .origin = ORIGIN_TX_QUEUE,
-//             .index = i + NUM_BUFFERS,
-//             .in_use = false,
-//         };
-
-//         enqueue_free(&state.tx_ring, buffer->buffer, BUF_SIZE, buffer);
-//     }
-
-//     lwip_init();
+//     print("my serial driver| ==> hello\n");
 
 //     gpt_init();
 
-//     LWIP_MEMPOOL_INIT(RX_POOL);
+//     u32_t start = sys_now();
+//     puthex64((uint64_t) start);
+//     print("\n");
 
-//     get_mac();
+//     // wait 5 seconds
+//     for (u32_t curr = sys_now(); curr - start < 5000; curr = sys_now()) {
 
-//     /* Set some dummy IP configuration values to get lwIP bootstrapped  */
-//     struct ip4_addr netmask, ipaddr, gw, multicast;
-//     ipaddr_aton("0.0.0.0", &gw);
-//     ipaddr_aton("0.0.0.0", &ipaddr);
-//     ipaddr_aton("0.0.0.0", &multicast);
-//     ipaddr_aton("255.255.255.0", &netmask);
-
-//     state.netif.name[0] = 'e';
-//     state.netif.name[1] = '0';
-
-//     if (!netif_add(&(state.netif), &ipaddr, &netmask, &gw, &state,
-//               ethernet_init, ethernet_input)) {
-//         sel4cp_dbg_puts("Netif add returned NULL\n");
 //     }
 
-//     netif_set_default(&(state.netif));
-
-//     sel4cp_notify(INIT);
+//     print("Now\n");
+//     u32_t end = sys_now();
+//     puthex64((uint64_t) end);
+//     print("\n");
 // }
+
+void init(void)
+{
+    sel4cp_dbg_puts(sel4cp_name);
+    sel4cp_dbg_puts(": elf PD init function running\n");
+
+    /* Set up shared memory regions */
+    ring_init(&state.rx_ring, (ring_buffer_t *)rx_free, (ring_buffer_t *)rx_used, NULL, 1);
+    ring_init(&state.tx_ring, (ring_buffer_t *)tx_free, (ring_buffer_t *)tx_used, NULL, 1);
+
+
+    for (int i = 0; i < NUM_BUFFERS - 1; i++) {
+        ethernet_buffer_t *buffer = &state.buffer_metadata[i];
+        *buffer = (ethernet_buffer_t) {
+            .buffer = shared_dma_vaddr + (BUF_SIZE * i),
+            .size = BUF_SIZE,
+            .origin = ORIGIN_RX_QUEUE,
+            .index = i,
+            .in_use = false,
+        };
+        enqueue_free(&state.rx_ring, buffer->buffer, BUF_SIZE, buffer);
+    }
+
+    for (int i = 0; i < NUM_BUFFERS - 1; i++) {
+        ethernet_buffer_t *buffer = &state.buffer_metadata[i + NUM_BUFFERS];
+        *buffer = (ethernet_buffer_t) {
+            .buffer = shared_dma_vaddr + (BUF_SIZE * (i + NUM_BUFFERS)),
+            .size = BUF_SIZE,
+            .origin = ORIGIN_TX_QUEUE,
+            .index = i + NUM_BUFFERS,
+            .in_use = false,
+        };
+
+        enqueue_free(&state.tx_ring, buffer->buffer, BUF_SIZE, buffer);
+    }
+
+    lwip_init();
+
+    gpt_init();
+
+    LWIP_MEMPOOL_INIT(RX_POOL);
+
+    get_mac();
+
+    /* Set some dummy IP configuration values to get lwIP bootstrapped  */
+    struct ip4_addr netmask, ipaddr, gw, multicast;
+    ipaddr_aton("0.0.0.0", &gw);
+    ipaddr_aton("0.0.0.0", &ipaddr);
+    ipaddr_aton("0.0.0.0", &multicast);
+    ipaddr_aton("255.255.255.0", &netmask);
+
+    state.netif.name[0] = 'e';
+    state.netif.name[1] = '0';
+
+    if (!netif_add(&(state.netif), &ipaddr, &netmask, &gw, &state,
+              ethernet_init, ethernet_input)) {
+        sel4cp_dbg_puts("Netif add returned NULL\n");
+    }
+
+    netif_set_default(&(state.netif));
+
+    sel4cp_notify(INIT);
+}
 
 void notified(sel4cp_channel ch)
 {

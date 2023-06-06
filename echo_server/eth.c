@@ -43,10 +43,28 @@ uintptr_t uart_base;
 _Static_assert((512 * 2) * PACKET_BUFFER_SIZE <= 0x200000, "Expect rx+tx buffers to fit in single 2MB page");
 _Static_assert(sizeof(ring_buffer_t) <= 0x200000, "Expect ring buffer ring to fit in single 2MB page");
 
-struct descriptor {
-    uint16_t len;
-    uint16_t stat;
-    uint32_t addr;
+// IMX8mm descriptors
+// struct descriptor {
+//     uint16_t len;
+//     uint16_t stat;
+//     uint32_t addr;
+// };
+
+
+/* descriptor flags */
+#define EQOS_DESC2_IOC      BIT(31)
+#define EQOS_DESC3_OWN      BIT(31)
+#define EQOS_DESC3_FD       BIT(29)
+#define EQOS_DESC3_LD       BIT(28)
+#define EQOS_DESC3_BUF1V    BIT(24)
+#define DWCEQOS_DMA_RDES3_INTE    BIT(30)
+
+/* descriptor 0, 1 and 2 need to be written to in order to trigger dma */
+struct eqos_desc {
+    uint32_t des0; /* address of the packet */
+    uint32_t des1;
+    uint32_t des2; /* length of packet */
+    uint32_t des3; /* flags (interrupt, own, ld, etc) and length of packet */
 };
 
 typedef struct {
@@ -54,7 +72,7 @@ typedef struct {
     unsigned int remain;
     unsigned int tail;
     unsigned int head;
-    volatile struct descriptor *descr;
+    volatile struct eqos_desc *descr;
     uintptr_t phys;
     void **cookies;
 } ring_ctx_t;
@@ -71,10 +89,14 @@ static uint8_t mac[6];
 
 volatile void *eth_base_reg = (void *)(uintptr_t)0x2000000;
 
-struct eqos_mac_regs *mac_regs;
-struct eqos_mtl_regs *mtl_regs;
-struct eqos_dma_regs *dma_regs;
-struct eqos_tegra186_regs *tegra186_regs;
+// struct for eqos registers and device metadata
+struct eqos_priv eqos_dev;
+struct eqos_priv *eqos = &eqos_dev;
+
+// struct eqos_mac_regs *mac_regs;
+// struct eqos_mtl_regs *mtl_regs;
+// struct eqos_dma_regs *dma_regs;
+// struct eqos_tegra186_regs *tegra186_regs;
 
 
 static const struct eqos_config eqos_tegra186_config = {
@@ -85,21 +107,79 @@ static const struct eqos_config eqos_tegra186_config = {
     .config_mac_mdio = EQOS_MAC_MDIO_ADDRESS_CR_20_35,
 };
 
+void eqos_dma_disable_rxirq(struct eqos_priv *eqos)
+{
+    uint32_t regval;
+
+    regval = eqos->dma_regs->ch0_dma_ie;
+    regval &= ~DWCEQOS_DMA_CH0_IE_RIE;
+    eqos->dma_regs->ch0_dma_ie = regval;
+}
+
+void eqos_dma_enable_rxirq(struct eqos_priv *eqos)
+{
+    uint32_t regval;
+
+    regval = eqos->dma_regs->ch0_dma_ie;
+    regval |= DWCEQOS_DMA_CH0_IE_RIE;
+    eqos->dma_regs->ch0_dma_ie = regval;
+}
+
+void eqos_dma_disable_txirq(struct eqos_priv *eqos)
+{
+    uint32_t regval;
+
+    regval = eqos->dma_regs->ch0_dma_ie;
+    regval &= ~DWCEQOS_DMA_CH0_IE_TIE;
+    eqos->dma_regs->ch0_dma_ie = regval;
+}
+
+void eqos_dma_enable_txirq(struct eqos_priv *eqos)
+{
+    uint32_t regval;
+
+    regval = eqos->dma_regs->ch0_dma_ie;
+    regval |= DWCEQOS_DMA_CH0_IE_TIE;
+    eqos->dma_regs->ch0_dma_ie = regval;
+}
+
+void eqos_set_rx_tail_pointer(struct eqos_priv *eqos)
+{
+    uint32_t *dma_status = (uint32_t *)(eqos->regs + REG_DWCEQOS_DMA_CH0_STA);
+    *dma_status |= DWCEQOS_DMA_CH0_IS_RI;
+    // size_t num_buffers_in_ring = dev->rx_size - dev->rx_remain;
+
+    // // if there is buffers in ring, set 
+    // if (num_buffers_in_ring > 0) {
+    //     uintptr_t last_rx_desc = (dev->rx_ring_phys + ((dev->rdh + num_buffers_in_ring) * sizeof(struct eqos_desc)));
+    //     eqos->dma_regs->ch0_rxdesc_tail_pointer = last_rx_desc;
+    // }
+
+    // if there is buffers in ring, set tail 
+    if (rx.remain != 0) {
+        // calculate tail position
+        uintptr_t last_rx_desc = rx.phys + rx.tail * sizeof(struct eqos_desc);
+        eqos->dma_regs->ch0_rxdesc_tail_pointer = last_rx_desc;
+    }
+
+    
+}
+
 static void get_mac_addr(volatile void *reg, uint8_t *mac)
 {
     memcpy(mac, TX2_DEFAULT_MAC, 6);
 }
 
-static void set_mac(volatile void *mac_reg, uint8_t *mac)
+static void set_mac(struct eqos_priv *eqos, uint8_t *mac)
 {
     unsigned char enetaddr[ARP_HLEN];
     memcpy(enetaddr, TX2_DEFAULT_MAC, 6);
     uint32_t val1 = (enetaddr[5] << 8) | (enetaddr[4]);
-    mac_regs->address0_high = val1;
+    eqos->mac_regs->address0_high = val1;
     val1 = (enetaddr[3] << 24) | (enetaddr[2] << 16) |
            (enetaddr[1] << 8) | (enetaddr[0]);
 
-    mac_regs->address0_low;
+    eqos->mac_regs->address0_low = val1;
 }
 
 static void
@@ -128,26 +208,30 @@ void udelay(unsigned long us)
 static uintptr_t 
 getPhysAddr(uintptr_t virtual)
 {
-   
+    uint64_t offset = virtual - shared_dma_vaddr;
+    uintptr_t phys;
+
+    if (offset < 0) {
+        print("getPhysAddr: offset < 0");
+        return 0;
+    }
+
+    phys = shared_dma_paddr + offset;
+    return phys;
 }
 
 static void update_ring_slot(
     ring_ctx_t *ring,
     unsigned int idx,
     uintptr_t phys,
-    uint16_t len,
-    uint16_t stat)
+    uint32_t len,
+    uint32_t flags)
 {
-    volatile struct descriptor *d = &(ring->descr[idx]);
-    d->addr = phys;
-    d->len = len;
-
-    /* Ensure all writes to the descriptor complete, before we set the flags
-     * that makes hardware aware of this slot.
-     */
-    __sync_synchronize();
-
-    d->stat = stat;
+    volatile struct eqos_desc *d = &(ring->descr[idx]);
+    d->des0 = phys;
+    d->des1 = 0;
+    d->des2 = len;
+    d->des3 = flags;
 }
 
 static inline void
@@ -159,12 +243,58 @@ enable_irqs(volatile void *eth, uint32_t mask)
 static uintptr_t 
 alloc_rx_buf(size_t buf_size, void **cookie)
 {
-   
+    uintptr_t addr;
+    unsigned int len;
+
+    /* Try to grab a buffer from the available ring */
+    if (driver_dequeue(rx_ring.free_ring, &addr, &len, cookie)) {
+        print("RX Available ring is empty\n");
+        return 0;
+    }
+
+    uintptr_t phys = getPhysAddr(addr);
+
+    return getPhysAddr(addr);
 }
 
 static void fill_rx_bufs()
 {
-  
+    ring_ctx_t *ring = &rx;
+    __sync_synchronize();
+    while (ring->remain > 0) {
+        /* request a buffer */
+        void *cookie = NULL;
+        uintptr_t phys = alloc_rx_buf(MAX_PACKET_SIZE, &cookie);
+        if (!phys) {
+            break;
+        }
+        // uint16_t stat = RXD_EMPTY;
+        int idx = ring->tail;
+        int new_tail = idx + 1;
+        
+        // may need to handle wrap 
+        // if (new_tail == ring->cnt) {
+        //     new_tail = 0;
+        //     stat |= WRAP;
+        // }
+        ring->cookies[idx] = cookie;
+        update_ring_slot(ring, idx, phys, 0, EQOS_DESC3_OWN | EQOS_DESC3_BUF1V);
+
+        ring->tail = new_tail;
+        /* There is a race condition if add/remove is not synchronized. */
+        ring->remain--;
+    }
+    __sync_synchronize();
+
+    // if (dev->rx_remain != dev->rx_size) {
+    // ^ linux version
+    if (ring->tail != ring->head) {
+        /* We've refilled some buffers, so set the tail pointer so that the DMA controller knows */
+        eqos_set_rx_tail_pointer(eqos);
+    }
+
+    __sync_synchronize();
+
 }
 
 static void
@@ -182,16 +312,69 @@ static void
 raw_tx(volatile void *eth, unsigned int num, uintptr_t *phys,
                   unsigned int *len, void *cookie)
 {
+    // ring_ctx_t *ring = &tx;
+
+    // /* Ensure we have room */
+    // if (ring->remain < num) {
+    //     /* not enough room, try to complete some and check again */
+    //     complete_tx(eth);
+    //     unsigned int rem = ring->remain;
+    //     if (rem < num) {
+    //         print("TX queue lacks space");
+    //         return;
+    //     }
+    // }
+
+    // __sync_synchronize();
+
+    // unsigned int tail = ring->tail;
+    // unsigned int tail_new = tail;
+
+    // unsigned int i = num;
+    // while (i-- > 0) {
+    //     uint16_t stat = TXD_READY;
+    //     if (0 == i) {
+    //         stat |= TXD_ADDCRC | TXD_LAST;
+    //     }
+
+    //     unsigned int idx = tail_new;
+    //     if (++tail_new == TX_COUNT) {
+    //         tail_new = 0;
+    //         stat |= WRAP;
+    //     }
+    //     update_ring_slot(ring, idx, *phys++, *len++, stat);
+    // }
+
+    // ring->cookies[tail] = cookie;
+    // tx_lengths[tail] = num;
+    // ring->tail = tail_new;
+    // /* There is a race condition here if add/remove is not synchronized. */
+    // ring->remain -= num;
+
+    // __sync_synchronize();
+
+    // if (!(eth->tdar & TDAR_TDAR)) {
+    //     eth->tdar = TDAR_TDAR;
+    // }
+
 }
 
 static void 
-handle_eth(volatile void *eth)
+handle_eth(struct eqos_priv *eqos)
 {
+    // uintptr_t buffer = 0;
+    // unsigned int len = 0;
+    // void *cookie = NULL;
 
+    // // We need to put in an empty condition here. 
+    // while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
+    //     uintptr_t phys = getPhysAddr(buffer);
+    //     raw_tx(eth, 1, &phys, &len, cookie);
+    // }
 }
 
 static void 
-handle_tx(volatile void *eth)
+handle_tx(struct eqos_priv *eqos)
 {
 
 }
@@ -199,7 +382,7 @@ handle_tx(volatile void *eth)
 static void 
 eth_setup(void)
 {
-    struct eqos_config *config = &eqos_tegra186_config;
+
     uint32_t *dma_ie;
     uint32_t val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
 
@@ -208,11 +391,14 @@ eth_setup(void)
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
 
+    eqos->config = &eqos_tegra186_config;
+    eqos->regs = eth_base_reg;
+
     // setup registers 
-    mac_regs = (void *)(eth_base_reg + EQOS_MAC_REGS_BASE);
-    mtl_regs = (void *)(eth_base_reg + EQOS_MTL_REGS_BASE);
-    dma_regs = (void *)(eth_base_reg + EQOS_DMA_REGS_BASE);
-    tegra186_regs = (void *)(eth_base_reg + EQOS_TEGRA186_REGS_BASE);
+    eqos->mac_regs = (void *)(eth_base_reg + EQOS_MAC_REGS_BASE);
+    eqos->mtl_regs = (void *)(eth_base_reg + EQOS_MTL_REGS_BASE);
+    eqos->dma_regs = (void *)(eth_base_reg + EQOS_DMA_REGS_BASE);
+    eqos->tegra186_regs = (void *)(eth_base_reg + EQOS_TEGRA186_REGS_BASE);
 
     /* set up descriptor rings */
     rx.cnt = RX_COUNT;
@@ -221,15 +407,15 @@ eth_setup(void)
     rx.head = 0;
     rx.phys = shared_dma_paddr;
     rx.cookies = (void **)rx_cookies;
-    rx.descr = (volatile struct descriptor *)hw_ring_buffer_vaddr;
+    rx.descr = (volatile struct eqos_desc *)hw_ring_buffer_vaddr;
 
     tx.cnt = TX_COUNT;
     tx.remain = tx.cnt - 2;
     tx.tail = 0;
     tx.head = 0;
-    tx.phys = shared_dma_paddr + (sizeof(struct descriptor) * RX_COUNT);
+    tx.phys = shared_dma_paddr + (sizeof(struct eqos_desc) * RX_COUNT);
     tx.cookies = (void **)tx_cookies;
-    tx.descr = (volatile struct descriptor *)(hw_ring_buffer_vaddr + (sizeof(struct descriptor) * RX_COUNT));
+    tx.descr = (volatile struct eqos_desc *)(hw_ring_buffer_vaddr + (sizeof(struct eqos_desc) * RX_COUNT));
 
     // TX2 eqos device setup
     // ==== 
@@ -243,22 +429,22 @@ eth_setup(void)
     /* Configure MTL */
 
     /* Flush TX queue */
-    mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_FTQ);
+    eqos->mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_FTQ);
 
-    while (*((uint32_t *)eth_base_reg + 0xd00));
+    while (*((uint32_t *)eqos->regs + 0xd00));
     /* Enable Store and Forward mode for TX */
-    mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_TSF);
+    eqos->mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_TSF);
     /* Program Tx operating mode */
-    mtl_regs->txq0_operation_mode |= (EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_ENABLED <<
+    eqos->mtl_regs->txq0_operation_mode |= (EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_ENABLED <<
                                             EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_SHIFT);
     /* Transmit Queue weight */
-    mtl_regs->txq0_quantum_weight = 0x10;
+    eqos->mtl_regs->txq0_quantum_weight = 0x10;
 
     /* Enable Store and Forward mode for RX, since no jumbo frame */
-    mtl_regs->rxq0_operation_mode = (EQOS_MTL_RXQ0_OPERATION_MODE_RSF);
+    eqos->mtl_regs->rxq0_operation_mode = (EQOS_MTL_RXQ0_OPERATION_MODE_RSF);
 
     /* Transmit/Receive queue fifo size; use all RAM for 1 queue */
-    val = mac_regs->hw_feature1;
+    val = eqos->mac_regs->hw_feature1;
     tx_fifo_sz = (val >> EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_SHIFT) &
                  EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_MASK;
     rx_fifo_sz = (val >> EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_SHIFT) &
@@ -271,20 +457,20 @@ eth_setup(void)
     tqs = (128 << tx_fifo_sz) / 256 - 1;
     rqs = (128 << rx_fifo_sz) / 256 - 1;
 
-    mtl_regs->txq0_operation_mode &= ~(EQOS_MTL_TXQ0_OPERATION_MODE_TQS_MASK <<
+    eqos->mtl_regs->txq0_operation_mode &= ~(EQOS_MTL_TXQ0_OPERATION_MODE_TQS_MASK <<
                                              EQOS_MTL_TXQ0_OPERATION_MODE_TQS_SHIFT);
-    mtl_regs->txq0_operation_mode |=
+    eqos->mtl_regs->txq0_operation_mode |=
         tqs << EQOS_MTL_TXQ0_OPERATION_MODE_TQS_SHIFT;
-    mtl_regs->rxq0_operation_mode &= ~(EQOS_MTL_RXQ0_OPERATION_MODE_RQS_MASK <<
+    eqos->mtl_regs->rxq0_operation_mode &= ~(EQOS_MTL_RXQ0_OPERATION_MODE_RQS_MASK <<
                                              EQOS_MTL_RXQ0_OPERATION_MODE_RQS_SHIFT);
-    mtl_regs->rxq0_operation_mode |=
+    eqos->mtl_regs->rxq0_operation_mode |=
         rqs << EQOS_MTL_RXQ0_OPERATION_MODE_RQS_SHIFT;
 
     /* Flow control used only if each channel gets 4KB or more FIFO */
     if (rqs >= ((4096 / 256) - 1)) {
         uint32_t rfd, rfa;
 
-        mtl_regs->rxq0_operation_mode |= (EQOS_MTL_RXQ0_OPERATION_MODE_EHFC);
+        eqos->mtl_regs->rxq0_operation_mode |= (EQOS_MTL_RXQ0_OPERATION_MODE_EHFC);
 
         /*
          * Set Threshold for Activating Flow Contol space for min 2
@@ -311,36 +497,36 @@ eth_setup(void)
             rfa = 0x1E; /* Full-16K */
         }
 
-        mtl_regs->rxq0_operation_mode &= ~((EQOS_MTL_RXQ0_OPERATION_MODE_RFD_MASK <<
+        eqos->mtl_regs->rxq0_operation_mode &= ~((EQOS_MTL_RXQ0_OPERATION_MODE_RFD_MASK <<
                                                   EQOS_MTL_RXQ0_OPERATION_MODE_RFD_SHIFT) |
                                                  (EQOS_MTL_RXQ0_OPERATION_MODE_RFA_MASK <<
                                                   EQOS_MTL_RXQ0_OPERATION_MODE_RFA_SHIFT));
-        mtl_regs->rxq0_operation_mode |= (rfd <<
+        eqos->mtl_regs->rxq0_operation_mode |= (rfd <<
                                                 EQOS_MTL_RXQ0_OPERATION_MODE_RFD_SHIFT) |
                                                (rfa <<
                                                 EQOS_MTL_RXQ0_OPERATION_MODE_RFA_SHIFT);
     }
 
-    dma_ie = (uint32_t *)(eth_base_reg + 0xc30);
+    dma_ie = (uint32_t *)(eqos->regs + 0xc30);
     *dma_ie = 0x3020100;
 
     /* Configure MAC, not sure if L4T is the same */
-    mac_regs->rxq_ctrl0 =
-        (config->config_mac <<
+    eqos->mac_regs->rxq_ctrl0 =
+        (eqos->config->config_mac <<
          EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT);
 
     /* Set TX flow control parameters */
     /* Set Pause Time */
-    mac_regs->q0_tx_flow_ctrl = (0xffff << EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT);
+    eqos->mac_regs->q0_tx_flow_ctrl = (0xffff << EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT);
     /* Assign priority for RX flow control */
-    mac_regs->rxq_ctrl2 = (1 << EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT);
+    eqos->mac_regs->rxq_ctrl2 = (1 << EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT);
 
     /* Enable flow control */
-    mac_regs->q0_tx_flow_ctrl |= (EQOS_MAC_Q0_TX_FLOW_CTRL_TFE);
+    eqos->mac_regs->q0_tx_flow_ctrl |= (EQOS_MAC_Q0_TX_FLOW_CTRL_TFE);
 
-    mac_regs->rx_flow_ctrl = (EQOS_MAC_RX_FLOW_CTRL_RFE);
+    eqos->mac_regs->rx_flow_ctrl = (EQOS_MAC_RX_FLOW_CTRL_RFE);
 
-    mac_regs->configuration &=
+    eqos->mac_regs->configuration &=
         ~(EQOS_MAC_CONFIGURATION_GPSLCE |
           EQOS_MAC_CONFIGURATION_WD |
           EQOS_MAC_CONFIGURATION_JD |
@@ -348,27 +534,27 @@ eth_setup(void)
 
     /* PLSEN is set to 1 so that LPI is not initiated */
     // MAC_LPS_PLSEN_WR(1); << this macro below
-    uint32_t v = mac_regs->unused_0ac[9];
+    uint32_t v = eqos->mac_regs->unused_0ac[9];
     v = (v & (MAC_LPS_RES_WR_MASK_20)) | (((0) & (MAC_LPS_MASK_20)) << 20);
     v = (v & (MAC_LPS_RES_WR_MASK_10)) | (((0) & (MAC_LPS_MASK_10)) << 10);
     v = (v & (MAC_LPS_RES_WR_MASK_4)) | (((0) & (MAC_LPS_MASK_4)) << 4);
     v = ((v & MAC_LPS_PLSEN_WR_MASK) | ((1 & MAC_LPS_PLSEN_MASK) << 18));
-    mac_regs->unused_0ac[9] = v;
+    eqos->mac_regs->unused_0ac[9] = v;
 
     /* Update the MAC address */
-    set_mac(mac_regs, TX2_DEFAULT_MAC);
+    set_mac(eqos, TX2_DEFAULT_MAC);
 
-    mac_regs->configuration &= 0xffcfff7c;
-    mac_regs->configuration |=  DWCEQOS_MAC_CFG_TE | DWCEQOS_MAC_CFG_RE;
+    eqos->mac_regs->configuration &= 0xffcfff7c;
+    eqos->mac_regs->configuration |=  DWCEQOS_MAC_CFG_TE | DWCEQOS_MAC_CFG_RE;
 
     /* Configure DMA */
     /* Enable OSP mode */
-    dma_regs->ch0_tx_control = EQOS_DMA_CH0_TX_CONTROL_OSP;
+    eqos->dma_regs->ch0_tx_control = EQOS_DMA_CH0_TX_CONTROL_OSP;
 
     /* RX buffer size. Must be a multiple of bus width */
-    dma_regs->ch0_rx_control = (EQOS_MAX_PACKET_SIZE << EQOS_DMA_CH0_RX_CONTROL_RBSZ_SHIFT);
+    eqos->dma_regs->ch0_rx_control = (EQOS_MAX_PACKET_SIZE << EQOS_DMA_CH0_RX_CONTROL_RBSZ_SHIFT);
 
-    dma_regs->ch0_control = (EQOS_DMA_CH0_CONTROL_PBLX8);
+    eqos->dma_regs->ch0_control = (EQOS_DMA_CH0_CONTROL_PBLX8);
 
     /*
      * Burst length must be < 1/2 FIFO size.
@@ -380,45 +566,45 @@ eth_setup(void)
     if (pbl > 32) {
         pbl = 32;
     }
-    dma_regs->ch0_tx_control &=
+    eqos->dma_regs->ch0_tx_control &=
         ~(EQOS_DMA_CH0_TX_CONTROL_TXPBL_MASK <<
           EQOS_DMA_CH0_TX_CONTROL_TXPBL_SHIFT);
-    dma_regs->ch0_tx_control |= (pbl << EQOS_DMA_CH0_TX_CONTROL_TXPBL_SHIFT);
+    eqos->dma_regs->ch0_tx_control |= (pbl << EQOS_DMA_CH0_TX_CONTROL_TXPBL_SHIFT);
 
-    dma_regs->ch0_rx_control &=
+    eqos->dma_regs->ch0_rx_control &=
         ~(EQOS_DMA_CH0_RX_CONTROL_RXPBL_MASK <<
           EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT);
-    dma_regs->ch0_rx_control |= (1 << EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT);
+    eqos->dma_regs->ch0_rx_control |= (1 << EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT);
 
     /* DMA performance configuration */
     val = (2 << EQOS_DMA_SYSBUS_MODE_RD_OSR_LMT_SHIFT) |
           EQOS_DMA_SYSBUS_MODE_EAME | EQOS_DMA_SYSBUS_MODE_BLEN16 |
           EQOS_DMA_SYSBUS_MODE_BLEN8;
-    dma_regs->sysbus_mode = val;
+    eqos->dma_regs->sysbus_mode = val;
 
-    dma_regs->ch0_txdesc_list_haddress = 0;
-    dma_regs->ch0_txdesc_list_address = tx.phys;
-    dma_regs->ch0_txdesc_ring_length = TX_COUNT - 1;
+    eqos->dma_regs->ch0_txdesc_list_haddress = 0;
+    eqos->dma_regs->ch0_txdesc_list_address = tx.phys;
+    eqos->dma_regs->ch0_txdesc_ring_length = TX_COUNT - 1;
 
-    dma_regs->ch0_rxdesc_list_haddress = 0;
-    dma_regs->ch0_rxdesc_list_address = rx.phys;
-    dma_regs->ch0_rxdesc_ring_length = RX_COUNT - 1;
+    eqos->dma_regs->ch0_rxdesc_list_haddress = 0;
+    eqos->dma_regs->ch0_rxdesc_list_address = rx.phys;
+    eqos->dma_regs->ch0_rxdesc_ring_length = RX_COUNT - 1;
 
-    dma_regs->ch0_dma_ie = 0;
-    dma_regs->ch0_dma_ie = DWCEQOS_DMA_CH0_IE_RIE | DWCEQOS_DMA_CH0_IE_TIE |
+    eqos->dma_regs->ch0_dma_ie = 0;
+    eqos->dma_regs->ch0_dma_ie = DWCEQOS_DMA_CH0_IE_RIE | DWCEQOS_DMA_CH0_IE_TIE |
                                  DWCEQOS_DMA_CH0_IE_NIE | DWCEQOS_DMA_CH0_IE_AIE |
                                  DWCEQOS_DMA_CH0_IE_FBEE | DWCEQOS_DMA_CH0_IE_RWTE;
-    dma_regs->ch0_dma_rx_int_wd_timer = 120;
+    eqos->dma_regs->ch0_dma_rx_int_wd_timer = 120;
     udelay(100);
 
-    dma_regs->ch0_tx_control = EQOS_DMA_CH0_TX_CONTROL_ST;
-    dma_regs->ch0_rx_control = EQOS_DMA_CH0_RX_CONTROL_SR;
+    eqos->dma_regs->ch0_tx_control = EQOS_DMA_CH0_TX_CONTROL_ST;
+    eqos->dma_regs->ch0_rx_control = EQOS_DMA_CH0_RX_CONTROL_SR;
 
     // last_rx_desc = (rx.phys + ((EQOS_DESCRIPTORS_RX) * (uintptr_t)(sizeof(struct eqos_desc))));
     // last_tx_desc = (tx.phys + ((EQOS_DESCRIPTORS_TX) * (uintptr_t)(sizeof(struct eqos_desc))));
 
     /* Disable MMC event counters */
-    *(uint32_t *)(eth_base_reg + REG_DWCEQOS_ETH_MMC_CONTROL) |= REG_DWCEQOS_MMC_CNTFREEZ;
+    *(uint32_t *)(eqos->regs + REG_DWCEQOS_ETH_MMC_CONTROL) |= REG_DWCEQOS_MMC_CNTFREEZ;
 
     return;
 
@@ -431,6 +617,14 @@ void init_post()
     ring_init(&tx_ring, (ring_buffer_t *)tx_free, (ring_buffer_t *)tx_used, NULL, 0);
 
     fill_rx_bufs();
+
+    /* enable events */
+    eqos_dma_enable_rxirq(eqos);
+
+    // do we need tx?
+    eqos_dma_enable_txirq(eqos);
+
+
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");
     sel4cp_notify(INIT);
@@ -457,11 +651,12 @@ protected(sel4cp_channel ch, sel4cp_msginfo msginfo)
     switch (ch) {
         case INIT:
             // return the MAC address. 
-            // sel4cp_mr_set(0, eth->palr);
-            // sel4cp_mr_set(1, eth->paur);
+            sel4cp_mr_set(0, eqos->mac_regs->address0_low);
+            sel4cp_mr_set(1, eqos->mac_regs->address0_high);
             return sel4cp_msginfo_new(0, 2);
         case TX_CH:
-            // handle_tx(eth);
+            sel4cp_dbg_puts("In protected send\n");
+            handle_tx(eqos);
             break;
         default:
             sel4cp_dbg_puts("Received ppc on unexpected channel ");
@@ -475,7 +670,8 @@ void notified(sel4cp_channel ch)
 {
     switch(ch) {
         case IRQ_CH:
-            // handle_eth(eth);
+            sel4cp_dbg_puts("RX irq invoked\n");
+            handle_eth(eqos);
             have_signal = true;
             signal_msg = seL4_MessageInfo_new(IRQAckIRQ, 0, 0, 0);
             signal = (BASE_IRQ_CAP + IRQ_CH);
@@ -484,7 +680,9 @@ void notified(sel4cp_channel ch)
             init_post();
             break;
         case TX_CH:
-            // handle_tx(eth);
+            sel4cp_dbg_puts("In notified send\n");
+            handle_tx(eqos);
+
             break;
         default:
             sel4cp_dbg_puts("eth driver: received notification on unexpected channel\n");
