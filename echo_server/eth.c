@@ -107,6 +107,23 @@ static const struct eqos_config eqos_tegra186_config = {
     .config_mac_mdio = EQOS_MAC_MDIO_ADDRESS_CR_20_35,
 };
 
+
+static void update_ring_slot(
+    ring_ctx_t *ring,
+    unsigned int idx,
+    uintptr_t phys,
+    uint32_t len,
+    uint32_t flags)
+{
+    volatile struct eqos_desc *d = &(ring->descr[idx]);
+    // print("after getting d\n");
+    d->des0 = phys;
+    // print("Managed to save phys to des0\n");
+    d->des1 = 0;
+    d->des2 = len;
+    d->des3 = flags;
+}
+
 void eqos_dma_disable_rxirq(struct eqos_priv *eqos)
 {
     uint32_t regval;
@@ -165,6 +182,57 @@ void eqos_set_rx_tail_pointer(struct eqos_priv *eqos)
     
 }
 
+
+int eqos_send(struct eqos_priv *eqos, void *packet, int length)
+{
+    print("In eqos send\n");
+
+    volatile struct eqos_desc *tx_desc;
+    uint32_t ioc = 0;
+    if (tx.tail % 32 == 0) {
+        ioc = EQOS_DESC2_IOC;
+    }
+
+    print("Before update ring slot\n");
+
+
+
+
+    tx_desc = &(tx.descr[tx.tail]);
+    print("Something wrong with tx_desc\n");
+    ring_ctx_t *ring = &tx;
+    
+    print("tx_desc (should equal tx.decr at the start) = ");
+    puthex64(tx_desc);
+    print("\n");
+
+    print("tx.tail = ");
+    puthex64(tx.tail);
+    print("\n");
+    
+    // update_ring_slot(ring, tx.tail, (uintptr_t)packet, ioc | length, EQOS_DESC3_FD | EQOS_DESC3_LD | length);
+
+    tx_desc->des0 = (uintptr_t)packet;
+    tx_desc->des1 = 0;
+    tx_desc->des2 = ioc | length;
+    tx_desc->des3 = EQOS_DESC3_FD | EQOS_DESC3_LD | length;
+
+    print("After update ring slot\n");
+
+
+    __sync_synchronize();
+
+    tx_desc->des3 |= EQOS_DESC3_OWN;
+
+    print("right before dma_reg update\n");
+    eqos->dma_regs->ch0_txdesc_tail_pointer = (uintptr_t)(&(tx.descr[tx.tail + 1])) +
+                                              sizeof(struct eqos_desc);
+    print("after dma_reg update\n");
+
+    return 0;
+}
+
+
 static void get_mac_addr(volatile void *reg, uint8_t *mac)
 {
     memcpy(mac, TX2_DEFAULT_MAC, 6);
@@ -218,20 +286,6 @@ getPhysAddr(uintptr_t virtual)
 
     phys = shared_dma_paddr + offset;
     return phys;
-}
-
-static void update_ring_slot(
-    ring_ctx_t *ring,
-    unsigned int idx,
-    uintptr_t phys,
-    uint32_t len,
-    uint32_t flags)
-{
-    volatile struct eqos_desc *d = &(ring->descr[idx]);
-    d->des0 = phys;
-    d->des1 = 0;
-    d->des2 = len;
-    d->des3 = flags;
 }
 
 static inline void
@@ -303,53 +357,131 @@ handle_rx(volatile void *eth)
 }
 
 static void
-complete_tx(volatile void *eth)
+complete_tx(struct eqos_priv *eqos)
 {
+    unsigned int cnt_org;
+    void *cookie;
+    ring_ctx_t *ring = &tx;
+    unsigned int head = ring->head;
+    unsigned int cnt = 0;
+    volatile struct eqos_desc *tx_desc;
 
+
+    while (head != ring->tail) {
+        print("Looping through tx\n");
+        if (0 == cnt) {
+            cnt = tx_lengths[head];
+            if ((0 == cnt) || (cnt > TX_COUNT)) {
+                /* We are not supposed to read 0 here. */
+                print("complete_tx with cnt=0 or max");
+                return;
+            }
+            cnt_org = cnt;
+            cookie = ring->cookies[head];
+        }
+
+        volatile struct eqos_desc *d = &(ring->descr[head]);
+
+        /* If this buffer was not sent, we can't release any buffer. */
+        // if (d->stat & TXD_READY) {
+        //     /* give it another chance */
+        //     if (!(eth->tdar & TDAR_TDAR)) {
+        //         eth->tdar = TDAR_TDAR;
+        //     }
+        //     if (d->stat & TXD_READY) {
+        //         break;
+        //     }
+        // }
+        // uint32_t ring_pos = (i + ring->head) % TX_COUNT;
+        // tx_desc = ring->descr[ring_pos];
+        if ((d->des3 & EQOS_DESC3_OWN)) {
+            /* not all parts complete */
+            return;
+        }
+
+        /* Go to next buffer, handle roll-over. */
+        if (++head == TX_COUNT) {
+            head = 0;
+        }
+
+        if (0 == --cnt) {
+            ring->head = head;
+            /* race condition if add/remove is not synchronized. */
+            ring->remain += cnt_org;
+            /* give the buffer back */
+            buff_desc_t *desc = (buff_desc_t *)cookie;
+
+            enqueue_free(&tx_ring, desc->encoded_addr, desc->len, desc->cookie);
+        }
+    }
 }
 
 static void
-raw_tx(volatile void *eth, unsigned int num, uintptr_t *phys,
+raw_tx(struct eqos_priv *eqos, unsigned int num, uintptr_t *phys,
                   unsigned int *len, void *cookie)
 {
-    // ring_ctx_t *ring = &tx;
+    // assert(num == 1);
+    int err;
+    ring_ctx_t *ring = &tx;
 
-    // /* Ensure we have room */
-    // if (ring->remain < num) {
-    //     /* not enough room, try to complete some and check again */
-    //     complete_tx(eth);
-    //     unsigned int rem = ring->remain;
-    //     if (rem < num) {
-    //         print("TX queue lacks space");
-    //         return;
-    //     }
-    // }
+    print("In raw_tx\n");
+    /* Ensure we have room */
+    if (ring->remain < num) {
+        print("DOing complete_tx\n");
+        /* not enough room, try to complete some and check again */
+        complete_tx(eqos);
+        unsigned int rem = ring->remain;
+        if (rem < num) {
+            print("TX queue lacks space");
+            return;
+        }
+    }
 
-    // __sync_synchronize();
+    __sync_synchronize();
 
-    // unsigned int tail = ring->tail;
-    // unsigned int tail_new = tail;
+    unsigned int tail = ring->tail;
+    unsigned int tail_new = tail;
 
-    // unsigned int i = num;
-    // while (i-- > 0) {
-    //     uint16_t stat = TXD_READY;
-    //     if (0 == i) {
-    //         stat |= TXD_ADDCRC | TXD_LAST;
-    //     }
+    uint32_t i;
+    for (i = 0; i < num; i++) {
+        print("In send loop\n");
+        // uint16_t stat = TXD_READY;
+        // if (0 == i) {
+        //     stat |= TXD_ADDCRC | TXD_LAST;
+        // }
 
-    //     unsigned int idx = tail_new;
-    //     if (++tail_new == TX_COUNT) {
-    //         tail_new = 0;
-    //         stat |= WRAP;
-    //     }
-    //     update_ring_slot(ring, idx, *phys++, *len++, stat);
-    // }
+        unsigned int idx = tail_new;
+        if (++tail_new == TX_COUNT) {
+            tail_new = 0;
+            // stat |= WRAP;
+        }
 
-    // ring->cookies[tail] = cookie;
-    // tx_lengths[tail] = num;
-    // ring->tail = tail_new;
-    // /* There is a race condition here if add/remove is not synchronized. */
-    // ring->remain -= num;
+        print("phys = ");
+        puthex64(phys);
+        print("\n");
+
+        print("phys[0] = ");
+        puthex64(phys[0]);
+        print("\n");
+        // update_ring_slot(ring, idx, *phys++, *len++, stat);
+
+        print("len[0] = ");
+        puthex64(len[0]);
+        print("\n");
+
+        err = eqos_send(eqos, (void *)phys[i], len[i]);
+        // if (err == -ETIMEDOUT) {
+        //     ZF_LOGF("send timed out");
+        // }
+        print("After send\n");
+
+    }
+
+    ring->cookies[tail] = cookie;
+    tx_lengths[tail] = num;
+    ring->tail = tail_new;
+    /* There is a race condition here if add/remove is not synchronized. */
+    ring->remain -= num;
 
     // __sync_synchronize();
 
@@ -362,21 +494,22 @@ raw_tx(volatile void *eth, unsigned int num, uintptr_t *phys,
 static void 
 handle_eth(struct eqos_priv *eqos)
 {
-    // uintptr_t buffer = 0;
-    // unsigned int len = 0;
-    // void *cookie = NULL;
-
-    // // We need to put in an empty condition here. 
-    // while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
-    //     uintptr_t phys = getPhysAddr(buffer);
-    //     raw_tx(eth, 1, &phys, &len, cookie);
-    // }
+  
 }
 
 static void 
-handle_tx(struct eqos_priv *eqos)
+    handle_tx(struct eqos_priv *eqos)
 {
-
+    uintptr_t buffer = 0;
+    unsigned int len = 0;
+    void *cookie = NULL;
+    print("In handle_tx\n");
+    // We need to put in an empty condition here. 
+    while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
+        print("In driver_dequeue\n");
+        uintptr_t phys = getPhysAddr(buffer);
+        raw_tx(eqos, 1, &phys, &len, cookie);
+    }
 }
 
 static void 
@@ -409,6 +542,10 @@ eth_setup(void)
     rx.cookies = (void **)rx_cookies;
     rx.descr = (volatile struct eqos_desc *)hw_ring_buffer_vaddr;
 
+    print("RX descr = ");
+    puthex64(rx.descr);
+    print("\n");
+
     tx.cnt = TX_COUNT;
     tx.remain = tx.cnt - 2;
     tx.tail = 0;
@@ -416,7 +553,10 @@ eth_setup(void)
     tx.phys = shared_dma_paddr + (sizeof(struct eqos_desc) * RX_COUNT);
     tx.cookies = (void **)tx_cookies;
     tx.descr = (volatile struct eqos_desc *)(hw_ring_buffer_vaddr + (sizeof(struct eqos_desc) * RX_COUNT));
-
+    
+    print("TX descr = ");
+    puthex64(tx.descr);
+    print("\n");
     // TX2 eqos device setup
     // ==== 
     // 
@@ -638,6 +778,7 @@ void init_post()
 
 void init(void)
 {
+    udelay(100000);
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": elf PD init function running\n");
 
@@ -657,6 +798,8 @@ protected(sel4cp_channel ch, sel4cp_msginfo msginfo)
         case TX_CH:
             sel4cp_dbg_puts("In protected send\n");
             handle_tx(eqos);
+            sel4cp_dbg_puts("After: In protected send\n");
+
             break;
         default:
             sel4cp_dbg_puts("Received ppc on unexpected channel ");
@@ -670,7 +813,7 @@ void notified(sel4cp_channel ch)
 {
     switch(ch) {
         case IRQ_CH:
-            sel4cp_dbg_puts("RX irq invoked\n");
+            sel4cp_dbg_puts("===> RX irq invoked\n");
             handle_eth(eqos);
             have_signal = true;
             signal_msg = seL4_MessageInfo_new(IRQAckIRQ, 0, 0, 0);
@@ -682,7 +825,7 @@ void notified(sel4cp_channel ch)
         case TX_CH:
             sel4cp_dbg_puts("In notified send\n");
             handle_tx(eqos);
-
+            sel4cp_dbg_puts("After: In notified send\n");
             break;
         default:
             sel4cp_dbg_puts("eth driver: received notification on unexpected channel\n");

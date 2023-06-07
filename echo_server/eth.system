@@ -13,7 +13,7 @@
     <!-- TX2 TMR0 register location -->
     <memory_region name="timer" size="0xe0_000" phys_addr="0x03010000" />
 
-    <memory_region name="hw_ring_buffer" size="0x1_000" />
+    <memory_region name="hw_ring_buffer" size="0x2_000" />
     <memory_region name="shared_dma" size="0x200_000" page_size="0x200_000" />
 
     <!-- shared memory for ring buffer mechanism -->
@@ -46,7 +46,10 @@
 
         <map mr="shared_dma" vaddr="0x2_400_000" perms="rw" cached="true" setvar_vaddr="shared_dma_vaddr" />
 
-        <irq irq="152" id="1" /> <!-- ethernet interrupt -->
+        <!-- ethernet interrupt -->
+        <!-- tx2 rx 0 -->
+        <irq irq="194" id="1" />
+        <!-- <irq irq="152" id="1" /> -->
 
         <map mr="uart" vaddr="0x5_000_000" perms="rw" cached="false" setvar_vaddr="uart_base" />
 

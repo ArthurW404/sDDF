@@ -281,13 +281,14 @@ static void netif_status_callback(struct netif *netif)
 {
     print("\n\n ====== here ======\n\n");
     if (dhcp_supplied_address(netif)) {
-        print("\n\n ====== here2 ======\n\n");
         print("DHCP request finished, IP address for netif ");
         print(netif->name);
         print(" is: ");
         print(ip4addr_ntoa(netif_ip4_addr(netif)));
         print("\n");
     }
+    print("\n\n ====== finished?? ======\n\n");
+
 }
 
 static void get_mac(void)
@@ -308,9 +309,13 @@ void init_post(void)
     netif_set_status_callback(&(state.netif), netif_status_callback);
     netif_set_up(&(state.netif));
 
+    print("Before dhcp start\n");
+
     if (dhcp_start(&(state.netif))) {
         sel4cp_dbg_puts("failed to start DHCP negotiation\n");
     }
+
+    print("After dhcp start\n");
 
     setup_udp_socket();
     setup_utilization_socket();
