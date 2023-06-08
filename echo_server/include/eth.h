@@ -259,10 +259,10 @@ struct eqos_config {
 struct eqos_priv {
     const struct eqos_config *config;
     uintptr_t regs;
-    struct eqos_mac_regs volatile *mac_regs;
-    struct eqos_mtl_regs volatile *mtl_regs;
-    struct eqos_dma_regs volatile *dma_regs;
-    struct eqos_tegra186_regs volatile*tegra186_regs;
+    volatile struct eqos_mac_regs *mac_regs;
+    volatile struct eqos_mtl_regs *mtl_regs;
+    volatile struct eqos_dma_regs *dma_regs;
+    volatile struct eqos_tegra186_regs*tegra186_regs;
     // struct clock *clk_master_bus;
     // struct clock *clk_rx;
     // struct clock *clk_ptp_ref;

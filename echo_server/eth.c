@@ -136,10 +136,23 @@ void eqos_dma_disable_rxirq(struct eqos_priv *eqos)
 void eqos_dma_enable_rxirq(struct eqos_priv *eqos)
 {
     uint32_t regval;
+    
+    print("rxirq eqos->dma_regs->ch0_dma_ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");
 
     regval = eqos->dma_regs->ch0_dma_ie;
     regval |= DWCEQOS_DMA_CH0_IE_RIE;
+
+    print("rxirq regval = ");
+    puthex64(regval);
+    print("\n");
+
     eqos->dma_regs->ch0_dma_ie = regval;
+
+    print("after: rxirq eqos->dma_regs->ch0_dma_ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");
 }
 
 void eqos_dma_disable_txirq(struct eqos_priv *eqos)
@@ -155,8 +168,15 @@ void eqos_dma_enable_txirq(struct eqos_priv *eqos)
 {
     uint32_t regval;
 
+    print("txirq eqos->dma_regs->ch0_dma_ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");
+
     regval = eqos->dma_regs->ch0_dma_ie;
     regval |= DWCEQOS_DMA_CH0_IE_TIE;
+    print("txirq regval = ");
+    puthex64(regval);
+    print("\n");
     eqos->dma_regs->ch0_dma_ie = regval;
 }
 
@@ -233,9 +253,21 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
 }
 
 
-static void get_mac_addr(volatile void *reg, uint8_t *mac)
+static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
 {
-    memcpy(mac, TX2_DEFAULT_MAC, 6);
+    //default one: 00:04:4b:c5:67:70
+
+    // memcpy(mac, TX2_DEFAULT_MAC, 6);
+    uint32_t l, h;
+    l = eqos->mac_regs->address0_low;
+    h = eqos->mac_regs->address0_high;
+
+    mac[0] = l >> 24;
+    mac[1] = l >> 16 & 0xff;
+    mac[2] = l >> 8 & 0xff;
+    mac[3] = l & 0xff;
+    mac[4] = h >> 24;
+    mac[5] = h >> 16 & 0xff;
 }
 
 static void set_mac(struct eqos_priv *eqos, uint8_t *mac)
@@ -497,8 +529,7 @@ handle_eth(struct eqos_priv *eqos)
   
 }
 
-static void 
-    handle_tx(struct eqos_priv *eqos)
+static void handle_tx(struct eqos_priv *eqos)
 {
     uintptr_t buffer = 0;
     unsigned int len = 0;
@@ -519,19 +550,38 @@ eth_setup(void)
     uint32_t *dma_ie;
     uint32_t val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
 
-    get_mac_addr(NULL, mac);
-    sel4cp_dbg_puts("MAC: ");
-    dump_mac(mac);
-    sel4cp_dbg_puts("\n");
-
     eqos->config = &eqos_tegra186_config;
     eqos->regs = eth_base_reg;
 
     // setup registers 
-    eqos->mac_regs = (void *)(eth_base_reg + EQOS_MAC_REGS_BASE);
-    eqos->mtl_regs = (void *)(eth_base_reg + EQOS_MTL_REGS_BASE);
-    eqos->dma_regs = (void *)(eth_base_reg + EQOS_DMA_REGS_BASE);
-    eqos->tegra186_regs = (void *)(eth_base_reg + EQOS_TEGRA186_REGS_BASE);
+    eqos->mac_regs = (void *)(eqos->regs + EQOS_MAC_REGS_BASE);
+    eqos->mtl_regs = (void *)(eqos->regs + EQOS_MTL_REGS_BASE);
+    eqos->dma_regs = (void *)(eqos->regs + EQOS_DMA_REGS_BASE);
+    eqos->tegra186_regs = (void *)(eqos->regs + EQOS_TEGRA186_REGS_BASE);
+
+    print("MAC regs: ");
+    puthex64(eqos->mac_regs);
+    print("\n");
+
+    print("mtl_regs regs: ");
+    puthex64(eqos->mtl_regs);
+    print("\n");
+    
+    print("dma_regs regs: ");
+    puthex64(eqos->dma_regs);
+    print("\n");
+
+    get_mac_addr(eqos, mac);
+    sel4cp_dbg_puts("MAC: ");
+    dump_mac(mac);
+    sel4cp_dbg_puts("\n");
+    
+    eqos->mac_regs->address0_low = 0;
+    eqos->mac_regs->address0_high = 0;
+
+    sel4cp_dbg_puts("Updaated MAC: ");
+    dump_mac(mac);
+    sel4cp_dbg_puts("\n");
 
     /* set up descriptor rings */
     rx.cnt = RX_COUNT;
@@ -729,11 +779,25 @@ eth_setup(void)
     eqos->dma_regs->ch0_rxdesc_list_haddress = 0;
     eqos->dma_regs->ch0_rxdesc_list_address = rx.phys;
     eqos->dma_regs->ch0_rxdesc_ring_length = RX_COUNT - 1;
-
+    
+    print("init: ch dma ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");    
+    
     eqos->dma_regs->ch0_dma_ie = 0;
+
+    print("init: ch dma ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");    
+
     eqos->dma_regs->ch0_dma_ie = DWCEQOS_DMA_CH0_IE_RIE | DWCEQOS_DMA_CH0_IE_TIE |
                                  DWCEQOS_DMA_CH0_IE_NIE | DWCEQOS_DMA_CH0_IE_AIE |
                                  DWCEQOS_DMA_CH0_IE_FBEE | DWCEQOS_DMA_CH0_IE_RWTE;
+    
+    print("init: ch dma ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");    
+
     eqos->dma_regs->ch0_dma_rx_int_wd_timer = 120;
     udelay(100);
 
@@ -815,6 +879,8 @@ void notified(sel4cp_channel ch)
         case IRQ_CH:
             sel4cp_dbg_puts("===> RX irq invoked\n");
             handle_eth(eqos);
+
+
             have_signal = true;
             signal_msg = seL4_MessageInfo_new(IRQAckIRQ, 0, 0, 0);
             signal = (BASE_IRQ_CAP + IRQ_CH);
@@ -823,12 +889,15 @@ void notified(sel4cp_channel ch)
             init_post();
             break;
         case TX_CH:
-            sel4cp_dbg_puts("In notified send\n");
-            handle_tx(eqos);
-            sel4cp_dbg_puts("After: In notified send\n");
+            sel4cp_dbg_puts("===> In notified send\n");
+            handle_tx(eqos);            
+            sel4cp_dbg_puts("===> After: In notified send\n");
             break;
         default:
             sel4cp_dbg_puts("eth driver: received notification on unexpected channel\n");
+            print("ch =");
+            puthex64(ch);
+            print("\n");
             break;
     }
 }

@@ -48,7 +48,21 @@
 
         <!-- ethernet interrupt -->
         <!-- tx2 rx 0 -->
-        <irq irq="194" id="1" />
+        <irq irq="186" id="1" />
+        <irq irq="218" id="20" />
+
+        <!-- In case its irq to the other numbers -->
+        <irq irq="187" id="10" />
+        <irq irq="188" id="11" />
+        <irq irq="189" id="12" />
+        <irq irq="190" id="13" />
+        <irq irq="222" id="21" />
+        <irq irq="191" id="14" />
+        <irq irq="192" id="15" />
+        <irq irq="193" id="16" />
+        <irq irq="194" id="17" />
+        <irq irq="195" id="18" />
+
         <!-- <irq irq="152" id="1" /> -->
 
         <map mr="uart" vaddr="0x5_000_000" perms="rw" cached="false" setvar_vaddr="uart_base" />
