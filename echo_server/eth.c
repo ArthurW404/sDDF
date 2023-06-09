@@ -88,6 +88,7 @@ ring_handle_t tx_ring;
 static uint8_t mac[6];
 
 volatile void *eth_base_reg = (void *)(uintptr_t)0x2000000;
+volatile struct eqos_mac_regs *eth_mac = (void *)(0x2000000 + EQOS_MAC_REGS_BASE);
 
 // struct for eqos registers and device metadata
 struct eqos_priv eqos_dev;
@@ -256,9 +257,11 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
 static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
 {
     //default one: 00:04:4b:c5:67:70
-
+    __sync_synchronize();
     // memcpy(mac, TX2_DEFAULT_MAC, 6);
     uint32_t l, h;
+    // l = eth_mac->address0_low;
+    // h = eth_mac->address0_high;
     l = eqos->mac_regs->address0_low;
     h = eqos->mac_regs->address0_high;
 
@@ -576,12 +579,28 @@ eth_setup(void)
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
     
+    
     eqos->mac_regs->address0_low = 0;
     eqos->mac_regs->address0_high = 0;
+
+    __sync_synchronize();
 
     sel4cp_dbg_puts("Updaated MAC: ");
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
+
+    volatile uint32_t *dma_status = (uint32_t *)(eqos->regs + REG_DWCEQOS_DMA_CH0_STA);
+    
+    print("dma_status: ");
+    puthex64(*dma_status);
+    print("\n");
+
+    // *dma_status |= DWCEQOS_DMA_CH0_IS_RI;
+    // *dma_status |= DWCEQOS_DMA_CH0_IS_RI;
+
+    // print("updated dma_status: ");
+    // puthex64(*dma_status);
+    // print("\n");
 
     /* set up descriptor rings */
     rx.cnt = RX_COUNT;
