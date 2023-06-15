@@ -13,6 +13,17 @@
     <!-- TX2 TMR0 register location -->
     <memory_region name="timer" size="0xe0_000" phys_addr="0x03010000" />
 
+    <!-- TX2 tegra-hsp register location -->
+    <memory_region name="hsp" size="0xa0_000" phys_addr="0x03c00000" />
+
+    <!-- TX2 bpmp register location -->
+    <memory_region name="bpmp_tx_shmem" size="0x01_000" phys_addr="0x3004e000" />
+    <memory_region name="bpmp_rx_shmem" size="0x01_000" phys_addr="0x3004f000" />
+
+    <!-- TX2 clock register location -->
+    <memory_region name="clock" size="0x1_000_000" phys_addr="0x5000000" />
+
+
     <memory_region name="hw_ring_buffer" size="0x2_000" />
     <memory_region name="shared_dma" size="0x200_000" page_size="0x200_000" />
 
@@ -32,6 +43,13 @@
     <protection_domain name="eth" priority="101" budget="160" period="300" pp="true">
         <program_image path="eth.elf" />
         <map mr="eth0" vaddr="0x2_000_000" perms="rw" cached="false"/>
+        <map mr="hsp" vaddr="0x2_100_000" perms="rw" cached="false" setvar_vaddr="hsp_regs" />
+
+        <map mr="bpmp_tx_shmem" vaddr="0x2_200_000" perms="rw" cached="false" setvar_vaddr="bpmp_tx_shmem_base" />
+        <map mr="bpmp_rx_shmem" vaddr="0x2_300_000" perms="rw" cached="false" setvar_vaddr="bpmp_rx_shmem_base" />
+        
+        <map mr="clock" vaddr="0x6_000_000" perms="rw" cached="false" setvar_vaddr="car_base" />
+
 
         <map mr="hw_ring_buffer" vaddr="0x3_000_000" perms="rw" cached="false" setvar_vaddr="hw_ring_buffer_vaddr" />
 

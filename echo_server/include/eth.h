@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "clock.h"
+
 #define BIT(n) (1ul<<(n))
 
 #define TX2_DEFAULT_MAC "\x00\x04\x4b\xc5\x67\x70"
@@ -263,11 +265,11 @@ struct eqos_priv {
     volatile struct eqos_mtl_regs *mtl_regs;
     volatile struct eqos_dma_regs *dma_regs;
     volatile struct eqos_tegra186_regs*tegra186_regs;
-    // struct clock *clk_master_bus;
-    // struct clock *clk_rx;
-    // struct clock *clk_ptp_ref;
-    // struct clock *clk_tx;
-    // struct clock *clk_slave_bus;
+    struct clock *clk_master_bus;
+    struct clock *clk_rx;
+    struct clock *clk_ptp_ref;
+    struct clock *clk_tx;
+    struct clock *clk_slave_bus;
     // struct mii_dev *mii;
     // struct phy_device *phy;
     // uintptr_t last_rx_desc;
@@ -278,5 +280,5 @@ struct eqos_priv {
     // gpio_sys_t *gpio_sys;
     // gpio_t gpio;
     // reset_sys_t *reset_sys;
-    // clock_sys_t *clock_sys;
+    clock_sys_t *clock_sys;
 };

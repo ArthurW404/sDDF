@@ -31,11 +31,14 @@ SEL4CP_TOOL ?= $(SEL4CP_SDK)/bin/sel4cp
 
 LWIPDIR=lwip/src
 BENCHDIR=benchmark
+TX2ETHDIR=tx2_ethernet
+TX2BPMP=libtx2bpmp
 RINGBUFFERDIR=libsharedringbuffer
 
 BOARD_DIR := $(SEL4CP_SDK)/board/$(SEL4CP_BOARD)/$(SEL4CP_CONFIG)
 
-IMAGES := eth.elf lwip.elf benchmark.elf idle.elf
+IMAGES := eth.elf lwip.elf benchmark.elf idle.elf 
+# IMAGES := eth.elf lwip.elf benchmark.elf idle.elf tx2_ethernet.elf
 CFLAGS := -mcpu=$(CPU) -mstrict-align -ffreestanding -g3 -O3 -Wall  -Wno-unused-function
 LDFLAGS := -L$(BOARD_DIR)/lib -L.
 LIBS := -lsel4cp -Tsel4cp.ld -lc
@@ -50,7 +53,9 @@ CFLAGS += -I$(BOARD_DIR)/include \
 	-I$(LWIPDIR)/include \
 	-I$(LWIPDIR)/include/ipv4 \
 	-I$(RINGBUFFERDIR)/include \
-	-I$(BENCHDIR)/include 
+	-I$(BENCHDIR)/include \
+	-I$(TX2BPMP)/include/tx2bpmp \
+	# -I$(TX2ETHDIR)
 
 # COREFILES, CORE4FILES: The minimum set of files needed for lwIP.
 COREFILES=$(LWIPDIR)/core/init.c \
@@ -90,9 +95,10 @@ NETIFFILES=$(LWIPDIR)/netif/ethernet.c
 LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES)
 LWIP_OBJS := $(LWIPFILES:.c=.o) lwip.o libsharedringbuffer/shared_ringbuffer.o utilization_socket.o udp_echo_socket.o timer.o
 
-ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o
+ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o libtx2bpmp/src/ivc.o libtx2bpmp/src/hsp.o libtx2bpmp/src/bpmp.o
 BENCH_OBJS := benchmark/benchmark.o
 IDLE_OBJS := benchmark/idle.o
+TX2_ETH_OBJS := tx2_ethernet/tx2.o
 
 all: $(UIMAGE_FILE)
 
@@ -109,6 +115,9 @@ $(BUILD_DIR)/lwip.elf: $(addprefix $(BUILD_DIR)/, $(LWIP_OBJS))
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/benchmark.elf: $(addprefix $(BUILD_DIR)/, $(BENCH_OBJS))
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+$(BUILD_DIR)/tx2_ethernet.elf: $(addprefix $(BUILD_DIR)/, $(TX2_ETH_OBJS))
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/idle.elf: $(addprefix $(BUILD_DIR)/, $(IDLE_OBJS))
@@ -130,11 +139,15 @@ directories:
 	$(info $(shell mkdir -p $(BUILD_DIR)/lwip/src/netif))	\
     $(info $(shell mkdir -p $(BUILD_DIR)/libsharedringbuffer))	\
 	$(info $(shell mkdir -p $(BUILD_DIR)/benchmark))	\
+	$(info $(shell mkdir -p $(BUILD_DIR)/tx2_ethernet))	\
+	$(info $(shell mkdir -p $(BUILD_DIR)/libtx2bpmp/src))	\
+
 
 clean:
 	rm -f *.o *.elf .depend*
 	find . -name \*.o |xargs --no-run-if-empty rm
 
+	$(info $(shell mkdir -p $(BUILD_DIR)/libtx2bpmp))	\
 
 $(UIMAGE_FILE): directories $(IMAGE_FILE)
 	mkimage -A arm64 -O linux -T kernel -C none -a 81000000 -e 81000000 -d $(IMAGE_FILE) $(UIMAGE_FILE)

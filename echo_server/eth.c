@@ -12,6 +12,7 @@
 #include "eth.h"
 #include "shared_ringbuffer.h"
 #include "util.h"
+#include "clock.h"
 
 #define IRQ_CH 1
 #define TX_CH  2
@@ -94,6 +95,8 @@ volatile struct eqos_mac_regs *eth_mac = (void *)(0x2000000 + EQOS_MAC_REGS_BASE
 struct eqos_priv eqos_dev;
 struct eqos_priv *eqos = &eqos_dev;
 
+clock_sys_t clock_sys;
+tx2_clk_t tx2_clk;
 // struct eqos_mac_regs *mac_regs;
 // struct eqos_mtl_regs *mtl_regs;
 // struct eqos_dma_regs *dma_regs;
@@ -216,9 +219,6 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
 
     print("Before update ring slot\n");
 
-
-
-
     tx_desc = &(tx.descr[tx.tail]);
     print("Something wrong with tx_desc\n");
     ring_ctx_t *ring = &tx;
@@ -250,9 +250,80 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
                                               sizeof(struct eqos_desc);
     print("after dma_reg update\n");
 
+
     return 0;
 }
 
+
+
+static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
+{
+    int ret;
+    sel4cp_dbg_puts("==clk==> In eqos_start_clks_tegra186\n");
+    // assert(clock_sys_valid(eqos->clock_sys));
+
+    eqos->clk_slave_bus = tx2_car_get_clock(eqos->clock_sys, CLK_AXI_CBB);
+    if (eqos->clk_slave_bus == NULL) {
+        sel4cp_dbg_puts("tx2_car_get_clock failed CLK_SLAVE_BUS");
+        return -ENODEV;
+    }
+
+    sel4cp_dbg_puts("|eqos_start_clks_tegra186| Before gate enable\n");
+    print("eqos->clock_sys =");
+    puthex64(eqos->clock_sys);
+
+    print("\n");
+
+    ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_AXI_CBB, CLKGATE_ON);
+    if (ret) {
+        sel4cp_dbg_puts("Failed to enable CLK_GATE_AXI_CBB") ;
+        return -EIO;
+    }
+
+    ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_EQOS_AXI, CLKGATE_ON);
+    if (ret) {
+        sel4cp_dbg_puts("Failed to enable CLK_GATE_EQOS_AXI");
+        return -EIO;
+    }
+
+    eqos->clk_rx = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_RX_INPUT);
+    if (eqos->clk_rx == NULL) {
+        sel4cp_dbg_puts("tx2_car_get_clock failed CLK_RX");
+        return -ENODEV;
+    }
+    ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_EQOS_RX, CLKGATE_ON);
+    if (ret) {
+        sel4cp_dbg_puts("Failed to enable CLK_GATE_EQOS_RX");
+        return -EIO;
+    }
+
+    eqos->clk_ptp_ref = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_PTP_REF);
+    if (eqos->clk_ptp_ref == NULL) {
+        sel4cp_dbg_puts("tx2_car_get_clock failed CLK_EQOS_PTP_REF");
+        return -ENODEV;
+    }
+
+
+    ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_EQOS_PTP_REF, CLKGATE_ON);
+    if (ret) {
+        sel4cp_dbg_puts("Failed to enable CLK_GATE_EQOS_PTP_REF");
+        return -EIO;
+    }
+
+
+    eqos->clk_tx = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_TX);
+    if (eqos->clk_tx == NULL) {
+        sel4cp_dbg_puts("tx2_car_get_clock failed CLK_TX");
+        return -ENODEV;
+    }
+    ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_EQOS_TX, CLKGATE_ON);
+    if (ret) {
+        sel4cp_dbg_puts("Failed to enable CLK_GATE_EQOS_TX");
+        return -EIO;
+    }
+
+    return 0;
+}
 
 static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
 {
@@ -551,16 +622,40 @@ eth_setup(void)
 {
 
     uint32_t *dma_ie;
-    uint32_t val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
+    uint32_t ret, val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
+
+    sel4cp_dbg_puts("===> before config setup\n");
 
     eqos->config = &eqos_tegra186_config;
     eqos->regs = eth_base_reg;
+    sel4cp_dbg_puts("===> before regs setup\n");
 
     // setup registers 
     eqos->mac_regs = (void *)(eqos->regs + EQOS_MAC_REGS_BASE);
     eqos->mtl_regs = (void *)(eqos->regs + EQOS_MTL_REGS_BASE);
     eqos->dma_regs = (void *)(eqos->regs + EQOS_DMA_REGS_BASE);
     eqos->tegra186_regs = (void *)(eqos->regs + EQOS_TEGRA186_REGS_BASE);
+
+    // seems to just initialise bpmp and assign clock register maps and clock
+    sel4cp_dbg_puts("===> before clock_sys setup\n");
+
+    eqos->clock_sys = &clock_sys;
+    eqos->clock_sys->priv = &tx2_clk;
+    sel4cp_dbg_puts("===> before clock_sys_init\n");
+    ret = clock_sys_init(eqos->clock_sys);
+    if (ret) {
+        sel4cp_dbg_puts("eqos_start_clks_tegra186 failed");
+        return;
+    }
+    sel4cp_dbg_puts("===> after clock_sys_init\n");
+
+    ret = eqos_start_clks_tegra186(eqos);
+    if (ret) {
+        sel4cp_dbg_puts("eqos_start_clks_tegra186 failed");
+        // goto err;
+        return;
+    }
+
 
     print("MAC regs: ");
     puthex64(eqos->mac_regs);
