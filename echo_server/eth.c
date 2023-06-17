@@ -13,6 +13,9 @@
 #include "shared_ringbuffer.h"
 #include "util.h"
 #include "clock.h"
+#include "gpio.h"
+#include "reset.h"
+#include "reset-bindings.h"
 
 #define IRQ_CH 1
 #define TX_CH  2
@@ -254,7 +257,10 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
     return 0;
 }
 
-
+static clk_t clk_slave_bus;
+static clk_t clk_rx;
+static clk_t clk_ptp_ref;
+static clk_t clk_tx;
 
 static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
 {
@@ -262,17 +268,18 @@ static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
     sel4cp_dbg_puts("==clk==> In eqos_start_clks_tegra186\n");
     // assert(clock_sys_valid(eqos->clock_sys));
 
-    eqos->clk_slave_bus = tx2_car_get_clock(eqos->clock_sys, CLK_AXI_CBB);
+    eqos->clk_slave_bus = tx2_car_get_clock(eqos->clock_sys, CLK_AXI_CBB, &clk_slave_bus);
     if (eqos->clk_slave_bus == NULL) {
         sel4cp_dbg_puts("tx2_car_get_clock failed CLK_SLAVE_BUS");
         return -ENODEV;
     }
 
     sel4cp_dbg_puts("|eqos_start_clks_tegra186| Before gate enable\n");
+
     print("eqos->clock_sys =");
     puthex64(eqos->clock_sys);
-
     print("\n");
+
 
     ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_AXI_CBB, CLKGATE_ON);
     if (ret) {
@@ -286,18 +293,24 @@ static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
         return -EIO;
     }
 
-    eqos->clk_rx = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_RX_INPUT);
+    eqos->clk_rx = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_RX_INPUT, &clk_rx);
     if (eqos->clk_rx == NULL) {
         sel4cp_dbg_puts("tx2_car_get_clock failed CLK_RX");
         return -ENODEV;
     }
+    freq_t clk_rx_freq = eqos->clk_rx->get_freq(eqos->clk_rx);
+
+    print("clk_rx_freq = ");
+    puthex64(clk_rx_freq);
+    print("\n");
+
     ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_EQOS_RX, CLKGATE_ON);
     if (ret) {
         sel4cp_dbg_puts("Failed to enable CLK_GATE_EQOS_RX");
         return -EIO;
     }
 
-    eqos->clk_ptp_ref = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_PTP_REF);
+    eqos->clk_ptp_ref = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_PTP_REF, &clk_ptp_ref);
     if (eqos->clk_ptp_ref == NULL) {
         sel4cp_dbg_puts("tx2_car_get_clock failed CLK_EQOS_PTP_REF");
         return -ENODEV;
@@ -311,11 +324,19 @@ static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
     }
 
 
-    eqos->clk_tx = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_TX);
+    eqos->clk_tx = tx2_car_get_clock(eqos->clock_sys, CLK_EQOS_TX, &clk_tx);
     if (eqos->clk_tx == NULL) {
         sel4cp_dbg_puts("tx2_car_get_clock failed CLK_TX");
         return -ENODEV;
     }
+
+    freq_t clk_tx_freq = eqos->clk_tx->get_freq(eqos->clk_tx);
+
+    print("clk_tx_freq = ");
+    puthex64(clk_tx_freq);
+    print("\n");
+
+
     ret = tx2_car_gate_enable(eqos->clock_sys, CLK_GATE_EQOS_TX, CLKGATE_ON);
     if (ret) {
         sel4cp_dbg_puts("Failed to enable CLK_GATE_EQOS_TX");
@@ -325,16 +346,78 @@ static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
     return 0;
 }
 
+
+static int eqos_calibrate_pads_tegra186(struct eqos_priv *eqos)
+{
+    int ret;
+
+    eqos->tegra186_regs->sdmemcomppadctrl |= (EQOS_SDMEMCOMPPADCTRL_PAD_E_INPUT_OR_E_PWRD);
+
+    udelay(1);
+
+    eqos->tegra186_regs->auto_cal_config |= (EQOS_AUTO_CAL_CONFIG_START | EQOS_AUTO_CAL_CONFIG_ENABLE);
+
+    print("eqos->tegra186_regs->auto_cal_status = ");
+    puthex64(eqos->tegra186_regs->auto_cal_status);
+    print("\n");
+
+
+    print("&eqos->tegra186_regs->auto_cal_status = ");
+    puthex64(&eqos->tegra186_regs->auto_cal_status);
+    print("\n");
+
+    // was 10
+    ret = wait_for_bit_le32(&eqos->tegra186_regs->auto_cal_status,
+                            EQOS_AUTO_CAL_STATUS_ACTIVE, true, 1000000, false);
+    if (ret) {
+        sel4cp_dbg_puts("calibrate didn't start\n");
+        goto failed;
+    }
+
+    // was 100
+    ret = wait_for_bit_le32(&eqos->tegra186_regs->auto_cal_status,
+                            EQOS_AUTO_CAL_STATUS_ACTIVE, false, 1000000, false);
+    if (ret) {
+        sel4cp_dbg_puts("calibrate didn't finish\n");
+        goto failed;
+    }
+
+    ret = 0;
+
+failed:
+    eqos->tegra186_regs->sdmemcomppadctrl &= ~(EQOS_SDMEMCOMPPADCTRL_PAD_E_INPUT_OR_E_PWRD);
+
+    return ret;
+}
+
 static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
 {
     //default one: 00:04:4b:c5:67:70
-    __sync_synchronize();
+    // __sync_synchronize();
     // memcpy(mac, TX2_DEFAULT_MAC, 6);
     uint32_t l, h;
     // l = eth_mac->address0_low;
     // h = eth_mac->address0_high;
     l = eqos->mac_regs->address0_low;
     h = eqos->mac_regs->address0_high;
+    
+
+    print("&eqos->mac_regs->address0_low = ");
+    puthex64(&eqos->mac_regs->address0_low);
+    print("\n");
+
+    print("eqos->mac_regs->address0_low = ");
+    puthex64(eqos->mac_regs->address0_low);
+    print("\n");
+
+    print("&eqos->mac_regs->address0_high = ");
+    puthex64(&eqos->mac_regs->address0_high);
+    print("\n");
+
+    print("eqos->mac_regs->address0_high = ");
+    puthex64(eqos->mac_regs->address0_high);
+    print("\n");
+
 
     mac[0] = l >> 24;
     mac[1] = l >> 16 & 0xff;
@@ -342,6 +425,46 @@ static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
     mac[3] = l & 0xff;
     mac[4] = h >> 24;
     mac[5] = h >> 16 & 0xff;
+}
+
+
+static int eqos_start_resets_tegra186(struct eqos_priv *eqos)
+{
+    int ret;
+
+    ret = gpio_set(&eqos->gpio);
+    if (ret < 0) {
+        // print("dm_gpio_set_value(phy_reset, assert) failed: %d", ret);
+        print("dm_gpio_set_value(phy_reset, assert) failed: %d");
+        return ret;
+    }
+
+    udelay(2);
+
+    ret = gpio_clr(&eqos->gpio);
+    if (ret < 0) {
+        // print("dm_gpio_set_value(phy_reset, deassert) failed: %d", ret);
+        print("dm_gpio_set_value(phy_reset, deassert) failed: %d");
+        return ret;
+    }
+
+    ret = reset_sys_assert(eqos->reset_sys, RESET_EQOS);
+    if (ret < 0) {
+        // print("reset_assert() failed: %d", ret);
+        print("reset_assert() failed: %d\n");
+        return ret;
+    }
+
+    udelay(2);
+
+    ret = reset_sys_deassert(eqos->reset_sys, RESET_EQOS);
+    if (ret < 0) {
+        // print("reset_deassert() failed: %d", ret);
+        print("reset_deassert() failed: %d\n");
+        return ret;
+    }
+
+    return 0;
 }
 
 static void set_mac(struct eqos_priv *eqos, uint8_t *mac)
@@ -577,7 +700,7 @@ raw_tx(struct eqos_priv *eqos, unsigned int num, uintptr_t *phys,
 
         err = eqos_send(eqos, (void *)phys[i], len[i]);
         // if (err == -ETIMEDOUT) {
-        //     ZF_LOGF("send timed out");
+        //     print("send timed out");
         // }
         print("After send\n");
 
@@ -617,24 +740,16 @@ static void handle_tx(struct eqos_priv *eqos)
     }
 }
 
+gpio_sys_t gpio_sys = {0};
+reset_sys_t reset_sys = {0};
+tx2_reset_t tx2_reset = {0};
+
 static void 
 eth_setup(void)
 {
-
     uint32_t *dma_ie;
     uint32_t ret, val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
 
-    sel4cp_dbg_puts("===> before config setup\n");
-
-    eqos->config = &eqos_tegra186_config;
-    eqos->regs = eth_base_reg;
-    sel4cp_dbg_puts("===> before regs setup\n");
-
-    // setup registers 
-    eqos->mac_regs = (void *)(eqos->regs + EQOS_MAC_REGS_BASE);
-    eqos->mtl_regs = (void *)(eqos->regs + EQOS_MTL_REGS_BASE);
-    eqos->dma_regs = (void *)(eqos->regs + EQOS_DMA_REGS_BASE);
-    eqos->tegra186_regs = (void *)(eqos->regs + EQOS_TEGRA186_REGS_BASE);
 
     // seems to just initialise bpmp and assign clock register maps and clock
     sel4cp_dbg_puts("===> before clock_sys setup\n");
@@ -649,6 +764,58 @@ eth_setup(void)
     }
     sel4cp_dbg_puts("===> after clock_sys_init\n");
 
+    tx2_clk_t *clk = &tx2_clk; 
+
+
+    sel4cp_dbg_puts("Did not found a suitable reset interface, going to be initialising our own");
+    eqos->reset_sys = &reset_sys;
+
+
+    tx2_reset_t *reset = &tx2_reset;
+    
+    eqos->reset_sys->data = reset;
+
+    // use clock's bpmp 
+    ret = reset_sys_init(clk->bpmp, eqos->reset_sys);
+    if (ret) {
+        print("failed reset sys init\n");
+        return;
+    }
+
+    sel4cp_dbg_puts("Did not found a suitable gpio interface, going to be initialising our own\n");
+    eqos->gpio_sys = &gpio_sys;
+    ret = gpio_sys_init(eqos->gpio_sys);
+    if (ret) {
+        // goto fail;
+        print("failed gpio sys init\n");
+        return;
+    }
+
+    print("eqos->gpio_sys->init = ");
+    puthex64(eqos->gpio_sys);
+    print("\n");
+
+    ret = eqos->gpio_sys->init(eqos->gpio_sys, GPIO_PM4, GPIO_DIR_OUT, &eqos->gpio);
+    if (ret != 0) {
+        print("failed to init phy reset gpio pin\n");
+        return;
+    }
+
+    sel4cp_dbg_puts("===> before config setup\n");
+
+    eqos->config = &eqos_tegra186_config;
+    eqos->regs = eth_base_reg;
+    sel4cp_dbg_puts("===> before regs setup\n");
+
+    // setup registers 
+    eqos->mac_regs = (void *)(eqos->regs + EQOS_MAC_REGS_BASE);
+    eqos->mtl_regs = (void *)(eqos->regs + EQOS_MTL_REGS_BASE);
+    eqos->dma_regs = (void *)(eqos->regs + EQOS_DMA_REGS_BASE);
+    eqos->tegra186_regs = (void *)(eqos->regs + EQOS_TEGRA186_REGS_BASE);
+
+
+
+
     ret = eqos_start_clks_tegra186(eqos);
     if (ret) {
         sel4cp_dbg_puts("eqos_start_clks_tegra186 failed");
@@ -656,6 +823,33 @@ eth_setup(void)
         return;
     }
 
+    ret = eqos_start_resets_tegra186(eqos);
+    if (ret) {
+        sel4cp_dbg_puts("eqos_start_resets_tegra186 failed");
+        // goto err_stop_clks;
+        return;
+    }
+
+    // udelay(10);
+
+    // ret = wait_for_bit_le32(&eqos->dma_regs->mode,
+    //                         EQOS_DMA_MODE_SWR, false,
+    //                         eqos->config->swr_wait, false);
+    // if (ret) {
+    //     sel4cp_dbg_puts("EQOS_DMA_MODE_SWR stuck");
+    //     // goto err_stop_resets;
+    //     return;
+    // }
+
+    udelay(10000);
+
+
+    ret = eqos_calibrate_pads_tegra186(eqos);
+    if (ret < 0) {
+        ZF_LOGE("eqos_calibrate_pads() failed: %d", ret);
+        // goto err_stop_resets;
+        return;
+    }
 
     print("MAC regs: ");
     puthex64(eqos->mac_regs);
@@ -675,8 +869,10 @@ eth_setup(void)
     sel4cp_dbg_puts("\n");
     
     
-    eqos->mac_regs->address0_low = 0;
-    eqos->mac_regs->address0_high = 0;
+    // eqos->mac_regs->address0_low = 0;
+    // eqos->mac_regs->address0_high = 0;
+
+    set_mac(eqos, TX2_DEFAULT_MAC);
 
     __sync_synchronize();
 

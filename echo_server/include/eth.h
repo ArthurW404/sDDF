@@ -6,6 +6,8 @@
 #pragma once
 
 #include "clock.h"
+#include "gpio.h"
+#include "reset.h"
 
 #define BIT(n) (1ul<<(n))
 
@@ -277,8 +279,8 @@ struct eqos_priv {
     // unsigned char enetaddr[ARP_HLEN];
     // bool reg_access_ok;
     // ps_io_ops_t *tx2_io_ops;
-    // gpio_sys_t *gpio_sys;
-    // gpio_t gpio;
-    // reset_sys_t *reset_sys;
+    gpio_sys_t *gpio_sys;
+    gpio_t gpio;
+    reset_sys_t *reset_sys;
     clock_sys_t *clock_sys;
 };

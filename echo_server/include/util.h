@@ -5,6 +5,9 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <stdbool.h>
+
 #define UART_REG(x) ((volatile uint32_t *)(UART_BASE + (x)))
 
 // IMX8MM-evk
@@ -63,4 +66,20 @@ puthex64(uint64_t val)
         val >>= 4;
     }
     print(buffer);
+}
+
+static int wait_for_bit_le32(volatile void *addr, uint32_t mask, bool desired_state, uint32_t timeout, bool clearbit)
+{
+    uint32_t val;
+
+    // not sure what to do with clearbit
+    (void) clearbit; 
+
+    while (timeout--) {
+        val = *((uint32_t *)addr);  // Read the 32-bit value from the address
+        if ((val & mask) == desired_state)  // Check if the desired bit is set
+            return 0;
+    }
+
+    return 1;
 }

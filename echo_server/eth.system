@@ -23,6 +23,9 @@
     <!-- TX2 clock register location -->
     <memory_region name="clock" size="0x1_000_000" phys_addr="0x5000000" />
 
+    <!-- TX2 gpio register location -->
+    <memory_region name="gpio" size="0x10_000" phys_addr="0x02210000" />
+
 
     <memory_region name="hw_ring_buffer" size="0x2_000" />
     <memory_region name="shared_dma" size="0x200_000" page_size="0x200_000" />
@@ -47,7 +50,9 @@
 
         <map mr="bpmp_tx_shmem" vaddr="0x2_200_000" perms="rw" cached="false" setvar_vaddr="bpmp_tx_shmem_base" />
         <map mr="bpmp_rx_shmem" vaddr="0x2_300_000" perms="rw" cached="false" setvar_vaddr="bpmp_rx_shmem_base" />
-        
+
+        <map mr="gpio" vaddr="0x2_700_000" perms="rw" cached="false" setvar_vaddr="gpio_base" />
+
         <map mr="clock" vaddr="0x6_000_000" perms="rw" cached="false" setvar_vaddr="car_base" />
 
 

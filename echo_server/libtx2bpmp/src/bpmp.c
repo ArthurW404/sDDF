@@ -157,37 +157,26 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
         puthex64(rx_size);
         print("\n");
 
-        sel4cp_dbg_puts("Looping through rx_msg\n");
+        sel4cp_dbg_puts("My own memcpy\n");
         
-        for (int i = 0; i < rx_size; ++i) {
-            char byte = ((char *)rx_msg)[i];
-            puthex64(byte);
-            print(" ");
+        // for (int i = 0; i < rx_size; ++i) {
+        //     char dest_byte = ((char *)rx_msg)[i];
+        //     char src_byte = ((char *)(resp + 1))[i];
+        //     // puthex64(src_byte);
+        //     // print(" ");
+            
+        //     ((char *)rx_msg)[i] = src_byte;
+        // }
 
-            ((char *)rx_msg)[i] = 1;
-        }
-        print("\n");
+        // based on gcc memcpy
+        // https://github.com/gcc-mirror/gcc/blob/master/libgcc/memcpy.c
+        int len = rx_size;
+        char *d = rx_msg;
+        const char *s = resp + 1;
+        while (len--)
+            *d++ = *s++;
 
-        // checking if changed  
-        sel4cp_dbg_puts("Looping through rx_msg again\n");
-        for (int i = 0; i < rx_size; ++i) {
-            char byte = ((char *)rx_msg)[i];
-            puthex64(byte);
-            print(" ");
-        }
-        print("\n");
-
-
-        sel4cp_dbg_puts("Looping through resp + 1\n");
-        
-        for (int i = 0; i < rx_size; ++i) {
-            char byte = ((char *)(resp + 1))[i];
-            puthex64(byte);
-            print(" ");
-        }
-        print("\n");
-
-        // TODO !!! Temporarily commenting out memcpy
+        // TODO !!! Temporarily commenting out memcpy (this is faulting for some reason)
 		// memcpy(rx_msg, resp + 1, rx_size);
     }
 
