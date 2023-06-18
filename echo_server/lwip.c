@@ -287,7 +287,7 @@ static void netif_status_callback(struct netif *netif)
         print(ip4addr_ntoa(netif_ip4_addr(netif)));
         print("\n");
     }
-    print("\n\n ====== finished?? ======\n\n");
+    // print("\n\n ====== finished?? ======\n\n");
 
 }
 

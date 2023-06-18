@@ -176,21 +176,6 @@ static int hsp_doorbell_check(void *data, enum tx2_doorbell_id db_id)
     return (is_pending != 0);
 }
 
-// static int allocate_register_callback(pmem_region_t pmem, unsigned curr_num, size_t num_regs, void *token)
-// {
-//     assert(token != NULL);
-//     tx2_hsp_priv_t *hsp_priv = token;
-//     /* There's only one register region to map, map it in */
-//     assert(num_regs == 1 && curr_num == 0);
-//     hsp_priv->hsp_base = ps_pmem_map(hsp_priv->io_ops, pmem, false, PS_MEM_NORMAL);
-//     if (hsp_priv->hsp_base == NULL) {
-//         return -EIO;
-//     }
-//     hsp_priv->tx2_hsp_region = pmem;
-//     return 0;
-// }
-
-
 int tx2_hsp_init(tx2_hsp_t *hsp)
 {
     if (!hsp) {
@@ -203,9 +188,9 @@ int tx2_hsp_init(tx2_hsp_t *hsp)
     tx2_hsp_priv_t *hsp_priv = &hsp_priv_mem;
 
     hsp_priv->hsp_base = (volatile void *)hsp_regs;
-    print("==>|tx2_hsp_init|hsp_priv->hsp_base =");
-    puthex64(hsp_priv->hsp_base);
-    print("\n");
+    // print("==>|tx2_hsp_init|hsp_priv->hsp_base =");
+    // puthex64(hsp_priv->hsp_base);
+    // print("\n");
     hsp_priv->tx2_hsp_region = 0x3c00000;
 
     /* Get the base addr of the doorbell
@@ -221,18 +206,18 @@ int tx2_hsp_init(tx2_hsp_t *hsp)
     num_ss = (*int_dim_reg >> HSP_INT_DIMENSION_SS_SHIFT) & HSP_INT_DIMENSION_NUM_MASK;
     num_as = (*int_dim_reg >> HSP_INT_DIMENSION_AS_SHIFT) & HSP_INT_DIMENSION_NUM_MASK;
 
-    print("==>|tx2_hsp_init|num_sm =");
-    puthex64(num_sm);
-    print("\n");
+    // print("==>|tx2_hsp_init|num_sm =");
+    // puthex64(num_sm);
+    // print("\n");
 
 
-    print("==>|tx2_hsp_init|num_ss =");
-    puthex64(num_ss);
-    print("\n");
+    // print("==>|tx2_hsp_init|num_ss =");
+    // puthex64(num_ss);
+    // print("\n");
 
-    print("==>|tx2_hsp_init|num_as =");
-    puthex64(num_as);
-    print("\n");
+    // print("==>|tx2_hsp_init|num_as =");
+    // puthex64(num_as);
+    // print("\n");
 
     hsp_priv->doorbell_base = hsp_priv->hsp_base + (1 + (num_sm / 2) + num_ss + num_as) * 0x10000;
 

@@ -91,13 +91,7 @@ static inline int tx2_bpmp_destroy(struct tx2_bpmp *bpmp)
 static inline int tx2_bpmp_call(struct tx2_bpmp *bpmp, int mrq, void *tx_msg, size_t tx_size, void *rx_msg,
                                 size_t rx_size)
 {
-	sel4cp_dbg_puts("|tx2_bpmp_call| Calling call\n");
     __BPMP_CHECK_ARGS(bpmp->call);
-	sel4cp_dbg_puts("|tx2_bpmp_call| After bpmp check\n");
-
-	print("bpmp->call = ");
-	puthex64(bpmp->call);
-	print("\n");
     return bpmp->call(bpmp->data, mrq, tx_msg, tx_size, rx_msg, rx_size);
 }
 

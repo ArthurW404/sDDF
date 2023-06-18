@@ -565,6 +565,7 @@ static freq_t tx2_car_set_freq(clk_t *clk, freq_t hz)
  */
 clk_t *tx2_car_get_clock(clock_sys_t *clock_sys, enum clk_id id, clk_t *ret_clk)
 {
+    print("|tx2_car_get_clock| called\n");
     int error;
     if (!check_valid_clk_id(id)) {
         sel4cp_dbg_puts("Invalid clock ID");
@@ -656,7 +657,7 @@ fail:
  */
 int tx2_car_gate_enable(clock_sys_t *clock_sys, enum clock_gate gate, enum clock_gate_mode mode)
 {
-    sel4cp_dbg_puts("|tx2_car_gate_enable| Called\n");
+    // sel4cp_dbg_puts("|tx2_car_gate_enable| Called\n");
 
     if (!check_valid_gate(gate)) {
         sel4cp_dbg_puts("Invalid clock gate!\n");
@@ -668,27 +669,27 @@ int tx2_car_gate_enable(clock_sys_t *clock_sys, enum clock_gate gate, enum clock
         return -EINVAL;
     }
 
-    sel4cp_dbg_puts("|tx2_car_gate_enable| Before command\n");
+    // sel4cp_dbg_puts("|tx2_car_gate_enable| Before command\n");
     uint32_t command = (mode == CLKGATE_ON ? CMD_CLK_ENABLE : CMD_CLK_DISABLE);
     
-    sel4cp_dbg_puts("|tx2_car_gate_enable| Before gateid\n");
+    // sel4cp_dbg_puts("|tx2_car_gate_enable| Before gateid\n");
     uint32_t bpmp_gate_id = mrq_gate_id_map[gate];
-    sel4cp_dbg_puts("|tx2_car_gate_enable| Got gate_id!\n");
+    // sel4cp_dbg_puts("|tx2_car_gate_enable| Got gate_id!\n");
 
     /* Setup the message and make a call to BPMP */
     struct mrq_clk_request req = { .cmd_and_id = (command << 24) | bpmp_gate_id };
     struct mrq_clk_response res = {0};
     tx2_clk_t *clk = clock_sys->priv;
 
-    print("sizeof(struct mrq_clk_request) = ");
-    puthex64(sizeof(struct mrq_clk_request));
-    print("\n");
+    // print("sizeof(struct mrq_clk_request) = ");
+    // puthex64(sizeof(struct mrq_clk_request));
+    // print("\n");
 
-    print("sizeof(struct mrq_clk_response) = ");
-    puthex64(sizeof(struct mrq_clk_response));
-    print("\n");
+    // print("sizeof(struct mrq_clk_response) = ");
+    // puthex64(sizeof(struct mrq_clk_response));
+    // print("\n");
 
-    sel4cp_dbg_puts("|tx2_car_gate_enable| Before bpmp call\n");
+    // sel4cp_dbg_puts("|tx2_car_gate_enable| Before bpmp call\n");
     int bytes_recvd = tx2_bpmp_call(clk->bpmp, MRQ_CLK, &req, sizeof(req), &res, sizeof(res));
     if (bytes_recvd < 0) {
         return -EIO;
@@ -714,43 +715,12 @@ int clock_sys_init(clock_sys_t *clock_sys)
     tx2_clk_t *clk = NULL;
     void *car_vaddr = (void *)car_base;
 
-    // error = ps_calloc(&io_ops->malloc_ops, 1, sizeof(tx2_clk_t), (void **) &clock_sys->priv);
-    // if (error) {
-    //     sel4cp_dbg_puts("Failed to allocate memory for clock sys internal structure");
-    //     error = -ENOMEM;
-    //     goto fail;
-    // }
-    sel4cp_dbg_puts("|clock_sys_init| before ->priv\n");
     clk = clock_sys->priv;
-    sel4cp_dbg_puts("|clock_sys_init| after ->priv\n");
-
-    // car_vaddr = ps_io_map(&io_ops->io_mapper, TX2_CLKCAR_PADDR, TX2_CLKCAR_SIZE, 0, PS_MEM_NORMAL);
-    // if (car_vaddr == NULL) {
-    //     sel4cp_dbg_puts("Failed to map tx2 CAR registers");
-    //     error = -ENOMEM;
-    //     goto fail;
-    // }
 
     clk->car_vaddr =  (volatile void *) car_vaddr;
 
-    // /* See if there's a registered interface for the BPMP, if not, create one
-    //  * ourselves */
-    // error = ps_interface_find(&io_ops->interface_registration_ops, TX2_BPMP_INTERFACE,
-    //                           interface_search_handler, clk);
-    // if (error) {
-    //     error = ps_calloc(&io_ops->malloc_ops, 1, sizeof(struct tx2_bpmp), (void **) &clk->bpmp);
-    //     if (error) {
-    //         sel4cp_dbg_puts("Failed to allocate memory for the BPMP structure");
-    //         goto fail;
-    //     }
     clk->bpmp = &bpmp;
-    sel4cp_dbg_puts("|clock_sys_init| before bpmp_init\n");
     error = tx2_bpmp_init(clk->bpmp);
-    //     if (error) {
-    //         sel4cp_dbg_puts("Failed to initialise BPMP interface");
-    //         goto fail;
-    //     }
-    // }
 
     // clock_sys->gate_enable = &tx2_car_gate_enable;
     // clock_sys->get_clock = &tx2_car_get_clock;

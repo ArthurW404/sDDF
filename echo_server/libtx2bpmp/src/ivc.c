@@ -501,13 +501,13 @@ int tegra_ivc_init(struct tegra_ivc *ivc, unsigned long rx_base, unsigned long t
 	ivc->rx_channel = (volatile struct tegra_ivc_channel_header *)rx_base;
 	ivc->tx_channel = (volatile struct tegra_ivc_channel_header *)tx_base;
 
-	print("tegra_ivc_init| ivc->rx_channel =");
-    puthex64(ivc->rx_channel);
-    print("\n");
+	// print("tegra_ivc_init| ivc->rx_channel =");
+    // puthex64(ivc->rx_channel);
+    // print("\n");
 
-	print("tegra_ivc_init| ivc->tx_channel =");
-    puthex64(ivc->tx_channel);
-    print("\n");
+	// print("tegra_ivc_init| ivc->tx_channel =");
+    // puthex64(ivc->tx_channel);
+    // print("\n");
 
 	ivc->w_pos = 0;
 	ivc->r_pos = 0;

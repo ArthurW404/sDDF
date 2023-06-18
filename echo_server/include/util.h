@@ -54,6 +54,42 @@ hexchar(unsigned int v)
     return v < 10 ? '0' + v : ('a' - 10) + v;
 }
 
+// https://stackoverflow.com/questions/3982320/convert-integer-to-string-without-access-to-libraries
+// copies string version of n into buffer, assumes buffer is at least 50 
+// returns number of characters copied
+static int int_to_str(char *buffer, int n) {
+    // int n = 1000;
+    // char buffer[50];
+    int i = 0;
+    bool isNeg = n<0;
+    unsigned int n1 = isNeg ? -n : n;
+    while(n1!=0)
+    {
+        buffer[i++] = n1%10+'0';
+        n1=n1/10;
+    }
+    if(isNeg)
+        buffer[i++] = '-';
+    
+    buffer[i] = '\0';
+    
+    for(int t = 0; t < i/2; t++)
+    {
+        buffer[t] ^= buffer[i-t-1];
+        buffer[i-t-1] ^= buffer[t];
+        buffer[t] ^= buffer[i-t-1];
+    }
+    
+    if(n == 0)
+    {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+    }   
+    
+    // printf(buffer);
+    return i;
+}
+
 static void
 puthex64(uint64_t val)
 {
@@ -68,18 +104,18 @@ puthex64(uint64_t val)
     print(buffer);
 }
 
-static int wait_for_bit_le32(volatile void *addr, uint32_t mask, bool desired_state, uint32_t timeout, bool clearbit)
-{
-    uint32_t val;
+// static int wait_for_bit_le32(volatile void *addr, uint32_t mask, bool desired_state, uint32_t timeout, bool clearbit)
+// {
+//     uint32_t val;
 
-    // not sure what to do with clearbit
-    (void) clearbit; 
+//     // not sure what to do with clearbit
+//     (void) clearbit; 
 
-    while (timeout--) {
-        val = *((uint32_t *)addr);  // Read the 32-bit value from the address
-        if ((val & mask) == desired_state)  // Check if the desired bit is set
-            return 0;
-    }
+//     while (timeout--) {
+//         val = *((uint32_t *)addr);  // Read the 32-bit value from the address
+//         if ((val & mask) == desired_state)  // Check if the desired bit is set
+//             return 0;
+//     }
 
-    return 1;
-}
+//     return 1;
+// }

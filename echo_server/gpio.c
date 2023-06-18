@@ -310,15 +310,15 @@ int gpio_sys_init(gpio_sys_t *gpio_sys)
     // }
     gpio_sys->priv = gpio_base;
 
-    print("||gpio_sys_init|gpio_sys->priv = ");
-    puthex64(gpio_sys->priv);
-    print("\n");
+    // print("||gpio_sys_init|gpio_sys->priv = ");
+    // puthex64(gpio_sys->priv);
+    // print("\n");
 
     gpio_sys->init = &tx2_gpio_init;
     
-    print("tx2_gpio_init = ");
-    puthex64(&tx2_gpio_init);
-    print("\n");
+    // print("tx2_gpio_init = ");
+    // puthex64(&tx2_gpio_init);
+    // print("\n");
 
 
     gpio_sys->set_level = &tx2_gpio_set_level;

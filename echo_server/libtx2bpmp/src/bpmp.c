@@ -61,7 +61,7 @@ static struct tx2_bpmp_priv bpmp_data = {0};
 
 static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx_msg, size_t rx_size)
 {   
-    sel4cp_dbg_puts("|bpmp call| called\n");
+    // sel4cp_dbg_puts("|bpmp call| called\n");
 	int ret, err;
 	void *ivc_frame = NULL;
 	struct mrq_request *req;
@@ -70,16 +70,16 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
 
     struct tx2_bpmp_priv *bpmp_priv = data;
 
-    print("bpmp_priv =");
-    puthex64(bpmp_priv);
-    print("\n");
+    // print("bpmp_priv =");
+    // puthex64(bpmp_priv);
+    // print("\n");
 
 	if ((tx_size > BPMP_IVC_FRAME_SIZE) || (rx_size > BPMP_IVC_FRAME_SIZE))
 		return -EINVAL;
 
-    print("&bpmp_priv->ivc =");
-    puthex64(&bpmp_priv->ivc);
-    print("\n");
+    // print("&bpmp_priv->ivc =");
+    // puthex64(&bpmp_priv->ivc);
+    // print("\n");
 
 	ret = tegra_ivc_write_get_next_frame(&bpmp_priv->ivc, &ivc_frame);
 	if (ret) {
@@ -87,16 +87,16 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
 		return ret;
 	}
 
-    print("ivc_frame =");
-    puthex64(ivc_frame);
-    print("\n");
+    // print("ivc_frame =");
+    // puthex64(ivc_frame);
+    // print("\n");
 
 	req = ivc_frame;
 	req->mrq = mrq;
 	req->flags = BPMP_FLAG_DO_ACK | BPMP_FLAG_RING_DOORBELL;
 	memcpy(req + 1, tx_msg, tx_size);
 
-    sel4cp_dbg_puts("|bpmp_call|memcpy \n");
+    // sel4cp_dbg_puts("|bpmp_call|memcpy \n");
 
 	ret = tegra_ivc_write_advance(&bpmp_priv->ivc);
 	if (ret) {
@@ -105,11 +105,11 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
 		return ret;
 	}
 
-    sel4cp_dbg_puts("|bpmp_call| before timeout \n");
+    // sel4cp_dbg_puts("|bpmp_call| before timeout \n");
 
 
 	for (; timeout > 0; timeout--) {
-        sel4cp_dbg_puts("|bpmp_call| in timeout \n");
+        // sel4cp_dbg_puts("|bpmp_call| in timeout \n");
 		ret = tegra_ivc_channel_notified(&bpmp_priv->ivc);
 		if (ret) {
 			// sel4cp_dbg_puts("tegra_ivc_channel_notified() failed: %d\n", ret);
@@ -122,7 +122,7 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
 			break;
 	}
 
-    sel4cp_dbg_puts("|bpmp_call| after timeout loop \n");
+    // sel4cp_dbg_puts("|bpmp_call| after timeout loop \n");
 
 
     if (!timeout) {
@@ -133,31 +133,31 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
 
 	resp = ivc_frame;
 
-    print("ivc_frame =");
-    puthex64(ivc_frame);
-    print("\n");
+    // print("ivc_frame =");
+    // puthex64(ivc_frame);
+    // print("\n");
     
 	err = resp->err;
     
-    print("err =");
-    puthex64(err);
-    print("\n");
+    // print("err =");
+    // puthex64(err);
+    // print("\n");
 
 	if (!err && rx_msg && rx_size) {
 
-        print("rx_msg =");
-        puthex64(rx_msg);
-        print("\n");
+        // print("rx_msg =");
+        // puthex64(rx_msg);
+        // print("\n");
 
-        print("resp + 1 =");
-        puthex64(resp + 1);
-        print("\n");
+        // print("resp + 1 =");
+        // puthex64(resp + 1);
+        // print("\n");
         
-        print("rx_size =");
-        puthex64(rx_size);
-        print("\n");
+        // print("rx_size =");
+        // puthex64(rx_size);
+        // print("\n");
 
-        sel4cp_dbg_puts("My own memcpy\n");
+        // sel4cp_dbg_puts("My own memcpy\n");
         
         // for (int i = 0; i < rx_size; ++i) {
         //     char dest_byte = ((char *)rx_msg)[i];
@@ -181,7 +181,7 @@ static int bpmp_call(void *data, int mrq, void *tx_msg, size_t tx_size, void *rx
     }
 
 
-    sel4cp_dbg_puts("|bpmp_call| before tegra_ivc_read_advance \n");
+    // sel4cp_dbg_puts("|bpmp_call| before tegra_ivc_read_advance \n");
 
 	ret = tegra_ivc_read_advance(&bpmp_priv->ivc);
 	if (ret) {
@@ -243,10 +243,10 @@ static int bpmp_destroy(void *data)
 
 int tx2_bpmp_init(struct tx2_bpmp *bpmp)
 {
-    sel4cp_dbg_puts("|bpmp init| start\n");
+    print("|tx2_bpmp_init| called\n");
     
     if (!bpmp) {
-        sel4cp_dbg_puts("Arguments are NULL!");
+        sel4cp_dbg_puts("Arguments are NULL!\n");
         return -EINVAL;
     }
 
@@ -278,16 +278,6 @@ int tx2_bpmp_init(struct tx2_bpmp *bpmp)
     // bpmp_data.bpmp_shmems[RX_SHMEM] = 0x3004f000;
 
     // ==== setup ivc
-
-    print("==>|tx2_bpmp_init|bpmp_data.tx_base =");
-    puthex64(bpmp_data.tx_base);
-    print("\n");
-
-    print("==>|tx2_bpmp_init|bpmp_data.rx_base =");
-    puthex64(bpmp_data.rx_base);
-    print("\n");
-
-
     ret = tegra_ivc_init(&bpmp_data.ivc, (unsigned long) bpmp_data.rx_base, (unsigned long) bpmp_data.tx_base,
                          BPMP_IVC_FRAME_COUNT, BPMP_IVC_FRAME_SIZE, bpmp_ivc_notify, (void *) &bpmp_data);
     if (ret) {
@@ -327,10 +317,6 @@ success:
     bpmp->data = &bpmp_data;
     bpmp->call = bpmp_call;
     
-    print("|tx2_bpmp_init| bpmp->call = ");
-	puthex64(bpmp->call);
-	print("\n");
-
     bpmp->destroy = bpmp_destroy;
     bpmp_initialised = true;
     /* Register this BPMP interface so that the reset driver can access it */

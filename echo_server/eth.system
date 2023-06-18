@@ -55,7 +55,6 @@
 
         <map mr="clock" vaddr="0x6_000_000" perms="rw" cached="false" setvar_vaddr="car_base" />
 
-
         <map mr="hw_ring_buffer" vaddr="0x3_000_000" perms="rw" cached="false" setvar_vaddr="hw_ring_buffer_vaddr" />
 
         <map mr="rx_cookies" vaddr="0x3_400_000" perms="rw" cached="true" setvar_vaddr="rx_cookies" />

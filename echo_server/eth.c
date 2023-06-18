@@ -16,6 +16,10 @@
 #include "gpio.h"
 #include "reset.h"
 #include "reset-bindings.h"
+#include "wait_bit.h"
+#include "phy.h"
+#include "miiphy.h"
+#include "io.h"
 
 #define IRQ_CH 1
 #define TX_CH  2
@@ -98,8 +102,18 @@ volatile struct eqos_mac_regs *eth_mac = (void *)(0x2000000 + EQOS_MAC_REGS_BASE
 struct eqos_priv eqos_dev;
 struct eqos_priv *eqos = &eqos_dev;
 
-clock_sys_t clock_sys;
-tx2_clk_t tx2_clk;
+
+// statically assign memory
+static clock_sys_t clock_sys = {0};
+static tx2_clk_t tx2_clk = {0};
+static gpio_sys_t gpio_sys = {0};
+static reset_sys_t reset_sys = {0};
+static tx2_reset_t tx2_reset = {0};
+static clk_t clk_slave_bus = {0};
+static clk_t clk_rx = {0};
+static clk_t clk_ptp_ref = {0};
+static clk_t clk_tx = {0};
+
 // struct eqos_mac_regs *mac_regs;
 // struct eqos_mtl_regs *mtl_regs;
 // struct eqos_dma_regs *dma_regs;
@@ -148,6 +162,7 @@ void eqos_dma_enable_rxirq(struct eqos_priv *eqos)
     puthex64(eqos->dma_regs->ch0_dma_ie);
     print("\n");
 
+
     regval = eqos->dma_regs->ch0_dma_ie;
     regval |= DWCEQOS_DMA_CH0_IE_RIE;
 
@@ -156,6 +171,8 @@ void eqos_dma_enable_rxirq(struct eqos_priv *eqos)
     print("\n");
 
     eqos->dma_regs->ch0_dma_ie = regval;
+
+    __sync_synchronize();
 
     print("after: rxirq eqos->dma_regs->ch0_dma_ie = ");
     puthex64(eqos->dma_regs->ch0_dma_ie);
@@ -185,6 +202,13 @@ void eqos_dma_enable_txirq(struct eqos_priv *eqos)
     puthex64(regval);
     print("\n");
     eqos->dma_regs->ch0_dma_ie = regval;
+
+    __sync_synchronize();
+
+    print("after: txirq eqos->dma_regs->ch0_dma_ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");
+
 }
 
 void eqos_set_rx_tail_pointer(struct eqos_priv *eqos)
@@ -257,10 +281,100 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
     return 0;
 }
 
-static clk_t clk_slave_bus;
-static clk_t clk_rx;
-static clk_t clk_ptp_ref;
-static clk_t clk_tx;
+static int eqos_mdio_wait_idle(struct eqos_priv *eqos)
+{
+    return wait_for_bit_le32(&eqos->mac_regs->mdio_address,
+                             EQOS_MAC_MDIO_ADDRESS_GB, false,
+                             1000000, true);
+}
+
+static int eqos_mdio_read(struct mii_dev *bus, int mdio_addr, int mdio_devad,
+                          int mdio_reg)
+{
+    struct eqos_priv *eqos = bus->priv;
+    uint32_t val;
+    int ret;
+
+    print("&eqos->mac_regs->mdio_address = ");
+    puthex64(&eqos->mac_regs->mdio_address);
+    print("\n");
+
+    print("Before eqos_mdio_wait_idle\n");
+    ret = eqos_mdio_wait_idle(eqos);
+    if (ret) {
+        print("MDIO not idle at entry");
+        return ret;
+    }
+    print("After eqos_mdio_wait_idle\n");
+    
+    val = eqos->mac_regs->mdio_address;
+    val &= EQOS_MAC_MDIO_ADDRESS_SKAP |
+           EQOS_MAC_MDIO_ADDRESS_C45E;
+    val |= (mdio_addr << EQOS_MAC_MDIO_ADDRESS_PA_SHIFT) |
+           (mdio_reg << EQOS_MAC_MDIO_ADDRESS_RDA_SHIFT) |
+           (eqos->config->config_mac_mdio <<
+            EQOS_MAC_MDIO_ADDRESS_CR_SHIFT) |
+           (EQOS_MAC_MDIO_ADDRESS_GOC_READ <<
+            EQOS_MAC_MDIO_ADDRESS_GOC_SHIFT) |
+           EQOS_MAC_MDIO_ADDRESS_GB;
+    eqos->mac_regs->mdio_address = val;
+
+    udelay(eqos->config->mdio_wait);
+
+    print("Before second wait\n");
+    ret = eqos_mdio_wait_idle(eqos);
+    print("After second wait\n");
+    
+    if (ret) {
+        print("MDIO read didn't complete");
+        return ret;
+    }
+
+    val = eqos->mac_regs->mdio_data;
+    val &= EQOS_MAC_MDIO_DATA_GD_MASK;
+
+    return val;
+}
+
+static int eqos_mdio_write(struct mii_dev *bus, int mdio_addr, int mdio_devad,
+                           int mdio_reg, u16 mdio_val)
+{
+    struct eqos_priv *eqos = bus->priv;
+    u32 val;
+    int ret;
+
+    ret = eqos_mdio_wait_idle(eqos);
+    if (ret) {
+        print("MDIO not idle at entry");
+        return ret;
+    }
+
+    writel(mdio_val, &eqos->mac_regs->mdio_data);
+
+    val = readl(&eqos->mac_regs->mdio_address);
+    val &= EQOS_MAC_MDIO_ADDRESS_SKAP |
+           EQOS_MAC_MDIO_ADDRESS_C45E;
+    val |= (mdio_addr << EQOS_MAC_MDIO_ADDRESS_PA_SHIFT) |
+           (mdio_reg << EQOS_MAC_MDIO_ADDRESS_RDA_SHIFT) |
+           (eqos->config->config_mac_mdio <<
+            EQOS_MAC_MDIO_ADDRESS_CR_SHIFT) |
+           (EQOS_MAC_MDIO_ADDRESS_GOC_WRITE <<
+            EQOS_MAC_MDIO_ADDRESS_GOC_SHIFT) |
+           EQOS_MAC_MDIO_ADDRESS_GB;
+    writel(val, &eqos->mac_regs->mdio_address);
+
+    udelay(eqos->config->mdio_wait);
+
+    ret = eqos_mdio_wait_idle(eqos);
+    if (ret) {
+        print("MDIO read didn't complete");
+        return ret;
+    }
+
+    return 0;
+}
+
+
 
 static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
 {
@@ -346,40 +460,46 @@ static int eqos_start_clks_tegra186(struct eqos_priv *eqos)
     return 0;
 }
 
-
 static int eqos_calibrate_pads_tegra186(struct eqos_priv *eqos)
 {
     int ret;
+
+    print("initial eqos_calibrate_pads_tegra186: eqos->tegra186_regs->auto_cal_status = ");
+    puthex64(eqos->tegra186_regs->auto_cal_status);
+    print("\n");
 
     eqos->tegra186_regs->sdmemcomppadctrl |= (EQOS_SDMEMCOMPPADCTRL_PAD_E_INPUT_OR_E_PWRD);
 
     udelay(1);
 
-    eqos->tegra186_regs->auto_cal_config |= (EQOS_AUTO_CAL_CONFIG_START | EQOS_AUTO_CAL_CONFIG_ENABLE);
-
-    print("eqos->tegra186_regs->auto_cal_status = ");
+    print("before cal_config: eqos->tegra186_regs->auto_cal_status = ");
     puthex64(eqos->tegra186_regs->auto_cal_status);
     print("\n");
+    
 
+    eqos->tegra186_regs->auto_cal_config |= (EQOS_AUTO_CAL_CONFIG_START | EQOS_AUTO_CAL_CONFIG_ENABLE);
 
-    print("&eqos->tegra186_regs->auto_cal_status = ");
-    puthex64(&eqos->tegra186_regs->auto_cal_status);
-    print("\n");
-
-    // was 10
     ret = wait_for_bit_le32(&eqos->tegra186_regs->auto_cal_status,
-                            EQOS_AUTO_CAL_STATUS_ACTIVE, true, 1000000, false);
+                            EQOS_AUTO_CAL_STATUS_ACTIVE, true, 10, false);
+
+    print("after wait: eqos->tegra186_regs->auto_cal_status = ");
+    puthex64(eqos->tegra186_regs->auto_cal_status);
+    print("\n");
+    
     if (ret) {
         sel4cp_dbg_puts("calibrate didn't start\n");
         goto failed;
+    } else {
+        sel4cp_dbg_puts("calibrate started!!!\n");
     }
-
-    // was 100
+    
     ret = wait_for_bit_le32(&eqos->tegra186_regs->auto_cal_status,
-                            EQOS_AUTO_CAL_STATUS_ACTIVE, false, 1000000, false);
+                            EQOS_AUTO_CAL_STATUS_ACTIVE, false, 100, false);
     if (ret) {
         sel4cp_dbg_puts("calibrate didn't finish\n");
         goto failed;
+    } else {
+        sel4cp_dbg_puts("calibrate finished!!!\n");
     }
 
     ret = 0;
@@ -401,24 +521,6 @@ static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
     l = eqos->mac_regs->address0_low;
     h = eqos->mac_regs->address0_high;
     
-
-    print("&eqos->mac_regs->address0_low = ");
-    puthex64(&eqos->mac_regs->address0_low);
-    print("\n");
-
-    print("eqos->mac_regs->address0_low = ");
-    puthex64(eqos->mac_regs->address0_low);
-    print("\n");
-
-    print("&eqos->mac_regs->address0_high = ");
-    puthex64(&eqos->mac_regs->address0_high);
-    print("\n");
-
-    print("eqos->mac_regs->address0_high = ");
-    puthex64(eqos->mac_regs->address0_high);
-    print("\n");
-
-
     mac[0] = l >> 24;
     mac[1] = l >> 16 & 0xff;
     mac[2] = l >> 8 & 0xff;
@@ -740,143 +842,220 @@ static void handle_tx(struct eqos_priv *eqos)
     }
 }
 
-gpio_sys_t gpio_sys = {0};
-reset_sys_t reset_sys = {0};
-tx2_reset_t tx2_reset = {0};
-
-static void 
-eth_setup(void)
+static int tx2_initialise_hardware(struct eqos_priv *eqos)
 {
-    uint32_t *dma_ie;
-    uint32_t ret, val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
-
+    print("|tx2_initialise_hardware| called\n");
+    uint32_t ret;
 
     // seems to just initialise bpmp and assign clock register maps and clock
-    sel4cp_dbg_puts("===> before clock_sys setup\n");
-
     eqos->clock_sys = &clock_sys;
     eqos->clock_sys->priv = &tx2_clk;
-    sel4cp_dbg_puts("===> before clock_sys_init\n");
     ret = clock_sys_init(eqos->clock_sys);
     if (ret) {
         sel4cp_dbg_puts("eqos_start_clks_tegra186 failed");
-        return;
+        return -1;
     }
-    sel4cp_dbg_puts("===> after clock_sys_init\n");
-
     tx2_clk_t *clk = &tx2_clk; 
 
-
-    sel4cp_dbg_puts("Did not found a suitable reset interface, going to be initialising our own");
     eqos->reset_sys = &reset_sys;
-
-
     tx2_reset_t *reset = &tx2_reset;
-    
     eqos->reset_sys->data = reset;
-
     // use clock's bpmp 
     ret = reset_sys_init(clk->bpmp, eqos->reset_sys);
     if (ret) {
         print("failed reset sys init\n");
-        return;
+        return -1;
     }
 
-    sel4cp_dbg_puts("Did not found a suitable gpio interface, going to be initialising our own\n");
     eqos->gpio_sys = &gpio_sys;
     ret = gpio_sys_init(eqos->gpio_sys);
     if (ret) {
         // goto fail;
         print("failed gpio sys init\n");
-        return;
+        return -1;
     }
+    return 0;
+}
 
-    print("eqos->gpio_sys->init = ");
-    puthex64(eqos->gpio_sys);
+void *tx2_initialise()
+{
+    print("|tx2_initialise| called\n");
+
+    print("====> &tx2_initialise_hardware = ");
+    puthex64(&tx2_initialise_hardware);
     print("\n");
+
+    print("====> &miiphy_reset = ");
+    puthex64(&miiphy_reset);
+    print("\n");
+
+    char *test = "this is a test string\n";
+
+    print("====> test = ");
+    puthex64(test);
+    print("\n");
+
+    int ret;
+
+    /* initialise miiphy */
+    miiphy_init();
+
+    /* initialise phy */
+    ret = phy_init();
+    if (ret != 0) {
+        print("failed to initialise phy");
+    }
+  
+    ret = tx2_initialise_hardware(eqos);
+    if (ret < 0) {
+        sel4cp_dbg_puts("tx2_initialise_hardware() failed");
+        // goto err_stop_resets;
+        return NULL;
+    }
 
     ret = eqos->gpio_sys->init(eqos->gpio_sys, GPIO_PM4, GPIO_DIR_OUT, &eqos->gpio);
     if (ret != 0) {
         print("failed to init phy reset gpio pin\n");
-        return;
+        return NULL;
     }
-
-    sel4cp_dbg_puts("===> before config setup\n");
 
     eqos->config = &eqos_tegra186_config;
     eqos->regs = eth_base_reg;
-    sel4cp_dbg_puts("===> before regs setup\n");
 
     // setup registers 
     eqos->mac_regs = (void *)(eqos->regs + EQOS_MAC_REGS_BASE);
     eqos->mtl_regs = (void *)(eqos->regs + EQOS_MTL_REGS_BASE);
     eqos->dma_regs = (void *)(eqos->regs + EQOS_DMA_REGS_BASE);
     eqos->tegra186_regs = (void *)(eqos->regs + EQOS_TEGRA186_REGS_BASE);
+    
+    eqos->mii = mdio_alloc();
 
+    print("eqos->mii = ");
+    puthex64(eqos->mii);
+    print("\n");
 
+    if (!eqos->mii) {
+        print("Mdio alloc failed\n");
+        // goto err;
+        return NULL;
 
+    }
+    eqos->mii->read = eqos_mdio_read;
+    eqos->mii->write = eqos_mdio_write;
+    eqos->mii->priv = eqos;
+
+    strcpy(eqos->mii->name, "mii\0");
+
+    ret = mdio_register(eqos->mii);
+    if (ret < 0) {
+        print("Mdio register failed\n");
+        // goto err_free_mdio;
+        return NULL;
+    }
+
+//     return (void *)eqos;
+// err_free_mdio:
+//     mdio_free(eqos->mii);
+// err:
+//     print("Tx2 initialise failed");
+//     return NULL;
+
+    return eqos;
+}
+
+int eqos_start()
+{
+    uint32_t *dma_ie;
+    uint32_t ret, val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
 
     ret = eqos_start_clks_tegra186(eqos);
     if (ret) {
         sel4cp_dbg_puts("eqos_start_clks_tegra186 failed");
         // goto err;
-        return;
+        return -1;
     }
 
     ret = eqos_start_resets_tegra186(eqos);
     if (ret) {
         sel4cp_dbg_puts("eqos_start_resets_tegra186 failed");
         // goto err_stop_clks;
-        return;
+        return -1;
     }
 
-    // udelay(10);
+    udelay(10);
 
-    // ret = wait_for_bit_le32(&eqos->dma_regs->mode,
-    //                         EQOS_DMA_MODE_SWR, false,
-    //                         eqos->config->swr_wait, false);
-    // if (ret) {
-    //     sel4cp_dbg_puts("EQOS_DMA_MODE_SWR stuck");
-    //     // goto err_stop_resets;
-    //     return;
-    // }
+    ret = wait_for_bit_le32(&eqos->dma_regs->mode,
+                            EQOS_DMA_MODE_SWR, false,
+                            eqos->config->swr_wait, false);
 
-    udelay(10000);
+    if (ret) {
+        sel4cp_dbg_puts("EQOS_DMA_MODE_SWR stuck");
+        // goto err_stop_resets;
+        return -1;
+    }
 
+    // udelay(10000);
 
     ret = eqos_calibrate_pads_tegra186(eqos);
     if (ret < 0) {
-        ZF_LOGE("eqos_calibrate_pads() failed: %d", ret);
+        sel4cp_dbg_puts("eqos_calibrate_pads() failed: %d");
         // goto err_stop_resets;
-        return;
+        return -1;
     }
 
-    print("MAC regs: ");
-    puthex64(eqos->mac_regs);
-    print("\n");
+    sel4cp_dbg_puts("After calibrate pads\n");
 
-    print("mtl_regs regs: ");
-    puthex64(eqos->mtl_regs);
-    print("\n");
+
+    // /*
+    //  * if PHY was already connected and configured,
+    //  * don't need to reconnect/reconfigure again
+    //  */
+    // if (!eqos->phy) {
+    //     print("Before phy_connect()\n");
+    //     eqos->phy = phy_connect(eqos->mii, 0, NULL, PHY_INTERFACE_MODE_MII);
+    //     print("After phy_connect()\n");
+        
+    //     if (!eqos->phy) {
+    //         print("phy_connect() failed");
+    //         // goto err_stop_resets;
+    //         return -1;
+    //     }
+    //     print("Before phy_config()\n");
+
+    //     ret = phy_config(eqos->phy);
+    //     print("After phy_config()\n");
+    //     if (ret < 0) {
+    //         // print("phy_config() failed: %d", ret);
+    //         print("phy_config() failed: %d\n");
+    //         return -1;
+    //     }
+    // }
+
+    // if (!eqos->phy)
+    //     sel4cp_dbg_puts("For some reason the phy is not on????\n");
     
-    print("dma_regs regs: ");
-    puthex64(eqos->dma_regs);
-    print("\n");
+    // print("Before phy_startup()\n");
+    // ret = phy_startup(eqos->phy);
+    // print("After phy_startup()\n");
+    // if (ret < 0) {
+    //     // print("phy_startup() failed: %d", ret);
+    //     print("phy_startup() failed: %d\n");
+    //     return -1;
+    // }
+
+    // if (!eqos->phy->link) {
+    //     print("No link");
+    //     return -1;
+    // }
+
+    // ret = eqos_adjust_link(eqos);
+    // if (ret < 0) {
+    //     ZF_LOGE("eqos_adjust_link() failed: %d", ret);
+    //     goto err_shutdown_phy;
+    // }
 
     get_mac_addr(eqos, mac);
     sel4cp_dbg_puts("MAC: ");
-    dump_mac(mac);
-    sel4cp_dbg_puts("\n");
-    
-    
-    // eqos->mac_regs->address0_low = 0;
-    // eqos->mac_regs->address0_high = 0;
-
-    set_mac(eqos, TX2_DEFAULT_MAC);
-
-    __sync_synchronize();
-
-    sel4cp_dbg_puts("Updaated MAC: ");
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
 
@@ -886,37 +1065,7 @@ eth_setup(void)
     puthex64(*dma_status);
     print("\n");
 
-    // *dma_status |= DWCEQOS_DMA_CH0_IS_RI;
-    // *dma_status |= DWCEQOS_DMA_CH0_IS_RI;
 
-    // print("updated dma_status: ");
-    // puthex64(*dma_status);
-    // print("\n");
-
-    /* set up descriptor rings */
-    rx.cnt = RX_COUNT;
-    rx.remain = rx.cnt - 2;
-    rx.tail = 0;
-    rx.head = 0;
-    rx.phys = shared_dma_paddr;
-    rx.cookies = (void **)rx_cookies;
-    rx.descr = (volatile struct eqos_desc *)hw_ring_buffer_vaddr;
-
-    print("RX descr = ");
-    puthex64(rx.descr);
-    print("\n");
-
-    tx.cnt = TX_COUNT;
-    tx.remain = tx.cnt - 2;
-    tx.tail = 0;
-    tx.head = 0;
-    tx.phys = shared_dma_paddr + (sizeof(struct eqos_desc) * RX_COUNT);
-    tx.cookies = (void **)tx_cookies;
-    tx.descr = (volatile struct eqos_desc *)(hw_ring_buffer_vaddr + (sizeof(struct eqos_desc) * RX_COUNT));
-    
-    print("TX descr = ");
-    puthex64(tx.descr);
-    print("\n");
     // TX2 eqos device setup
     // ==== 
     // 
@@ -1041,8 +1190,26 @@ eth_setup(void)
     v = ((v & MAC_LPS_PLSEN_WR_MASK) | ((1 & MAC_LPS_PLSEN_MASK) << 18));
     eqos->mac_regs->unused_0ac[9] = v;
 
-    /* Update the MAC address */
-    set_mac(eqos, TX2_DEFAULT_MAC);
+    sel4cp_dbg_puts("Orig MAC: ");
+    dump_mac(mac);
+    sel4cp_dbg_puts("\n");
+
+    // /* Update the MAC address */
+    // set_mac(eqos, TX2_DEFAULT_MAC);
+
+    unsigned char enetaddr[ARP_HLEN];
+    memcpy(enetaddr, TX2_DEFAULT_MAC, 6);
+    uint32_t val1 = (enetaddr[5] << 8) | (enetaddr[4]);
+    eqos->mac_regs->address0_high = val1;
+    val1 = (enetaddr[3] << 24) | (enetaddr[2] << 16) |
+           (enetaddr[1] << 8) | (enetaddr[0]);
+    eqos->mac_regs->address0_low = val1;
+
+    __sync_synchronize();
+
+    sel4cp_dbg_puts("Updated MAC: ");
+    dump_mac(mac);
+    sel4cp_dbg_puts("\n");
 
     eqos->mac_regs->configuration &= 0xffcfff7c;
     eqos->mac_regs->configuration |=  DWCEQOS_MAC_CFG_TE | DWCEQOS_MAC_CFG_RE;
@@ -1120,8 +1287,43 @@ eth_setup(void)
     /* Disable MMC event counters */
     *(uint32_t *)(eqos->regs + REG_DWCEQOS_ETH_MMC_CONTROL) |= REG_DWCEQOS_MMC_CNTFREEZ;
 
-    return;
+}
 
+
+// similar to ethif_tx2_init
+static void 
+eth_setup(void)
+{
+    print("|eth_setup| called\n");
+    /* set up descriptor rings */
+    rx.cnt = RX_COUNT;
+    rx.remain = rx.cnt - 2;
+    rx.tail = 0;
+    rx.head = 0;
+    rx.phys = shared_dma_paddr;
+    rx.cookies = (void **)rx_cookies;
+    rx.descr = (volatile struct eqos_desc *)hw_ring_buffer_vaddr;
+
+    // print("RX descr = ");
+    // puthex64(rx.descr);
+    // print("\n");
+
+    tx.cnt = TX_COUNT;
+    tx.remain = tx.cnt - 2;
+    tx.tail = 0;
+    tx.head = 0;
+    tx.phys = shared_dma_paddr + (sizeof(struct eqos_desc) * RX_COUNT);
+    tx.cookies = (void **)tx_cookies;
+    tx.descr = (volatile struct eqos_desc *)(hw_ring_buffer_vaddr + (sizeof(struct eqos_desc) * RX_COUNT));
+    
+
+    // print("TX descr = ");
+    // puthex64(tx.descr);
+    // print("\n");
+
+    tx2_initialise();
+
+    return;
 }
 
 void init_post()
@@ -1131,6 +1333,8 @@ void init_post()
     ring_init(&tx_ring, (ring_buffer_t *)tx_free, (ring_buffer_t *)tx_used, NULL, 0);
 
     fill_rx_bufs();
+
+    eqos_start();
 
     /* enable events */
     eqos_dma_enable_rxirq(eqos);

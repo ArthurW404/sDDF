@@ -1,36 +1,53 @@
 /*
- * Copyright 2022, UNSW
- * SPDX-License-Identifier: BSD-2-Clause
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#pragma once
+/*
+ * Copyright (c) 2016, NVIDIA CORPORATION.
+ *
+ * Portions based on U-Boot's rtl8169.c.
+ */
 
-#include "clock.h"
-#include "gpio.h"
-#include "reset.h"
+/*
+ * This driver supports the Synopsys Designware Ethernet QOS (Quality Of
+ * Service) IP block. The IP supports multiple options for bus type, clocking/
+ * reset structure, and feature list.
+ *
+ * The driver is written such that generic core logic is kept separate from
+ * configuration-specific logic. Code that interacts with configuration-
+ * specific resources is split out into separate functions to avoid polluting
+ * common code. If/when this driver is enhanced to support multiple
+ * configurations, the core code should be adapted to call all configuration-
+ * specific functions through function pointers, with the definition of those
+ * function pointers being supplied by struct udevice_id eqos_ids[]'s .data
+ * field.
+ *
+ * The following configurations are currently supported:
+ * tegra186:
+ *    NVIDIA's Tegra186 chip. This configuration uses an AXI master/DMA bus, an
+ *    AHB slave/register bus, contains the DMA, MTL, and MAC sub-blocks, and
+ *    supports a single RGMII PHY. This configuration also has SW control over
+ *    all clock and reset signals to the HW block.
+ */
+
+#include "miiphy.h"
+#include "net.h"
 #include "phy.h"
 
-#define BIT(n) (1ul<<(n))
+#include "wait_bit.h"
 
-#define TX2_DEFAULT_MAC "\x00\x04\x4b\xc5\x67\x70"
+#include <platsupport/clock.h>
+#include <platsupport/io.h>
+#include <platsupportports/plat/gpio.h>
+#include <platsupport/gpio.h>
+#include <platsupport/reset.h>
 
-#define CONFIG_SYS_CACHELINE_SIZE 64
+#include "../tx2.h"
+#include "tx2_configs.h"
 
-#ifdef CONFIG_SYS_CACHELINE_SIZE
-#define ARCH_DMA_MINALIGN   CONFIG_SYS_CACHELINE_SIZE
-#else
-#define ARCH_DMA_MINALIGN   16
-#endif
-
-
-#define __ALIGN_MASK(x,mask)    (((x)+(mask))&~(mask))
-
-#define EQOS_ALIGN(x,a)      __ALIGN_MASK((x),(typeof(x))(a)-1)
-#define EQOS_MAX_PACKET_SIZE    EQOS_ALIGN(1568, ARCH_DMA_MINALIGN)
-
-
+#include <string.h>
+#include <ethdrivers/helpers.h>
 #define EQOS_MAC_REGS_BASE 0x000
-
 struct eqos_mac_regs {
     uint32_t configuration;             /* 0x000 */
     uint32_t unused_004[(0x070 - 0x004) / 4];   /* 0x004 */
@@ -219,6 +236,31 @@ struct eqos_config {
 /* ARP hardware address length */
 #define ARP_HLEN 6
 
+struct eqos_priv {
+    const struct eqos_config *config;
+    uintptr_t regs;
+    struct eqos_mac_regs *mac_regs;
+    struct eqos_mtl_regs *mtl_regs;
+    struct eqos_dma_regs *dma_regs;
+    struct eqos_tegra186_regs *tegra186_regs;
+    struct clock *clk_master_bus;
+    struct clock *clk_rx;
+    struct clock *clk_ptp_ref;
+    struct clock *clk_tx;
+    struct clock *clk_slave_bus;
+    struct mii_dev *mii;
+    struct phy_device *phy;
+    uintptr_t last_rx_desc;
+    uintptr_t last_tx_desc;
+    unsigned char enetaddr[ARP_HLEN];
+    bool reg_access_ok;
+    ps_io_ops_t *tx2_io_ops;
+    gpio_sys_t *gpio_sys;
+    gpio_t gpio;
+    reset_sys_t *reset_sys;
+    clock_sys_t *clock_sys;
+};
+
 #define REG_DWCEQOS_ETH_MMC_CONTROL      0x0700
 #define REG_DWCEQOS_MMC_CNTFREEZ         BIT(3)
 
@@ -260,28 +302,3 @@ struct eqos_config {
 /* Check sum bit */
 #define DWCEQOS_MAC_CFG_IPC              BIT(27)
 #define DWCEQOS_MAC_CFG_RE               BIT(0)
-
-struct eqos_priv {
-    const struct eqos_config *config;
-    uintptr_t regs;
-    volatile struct eqos_mac_regs *mac_regs;
-    volatile struct eqos_mtl_regs *mtl_regs;
-    volatile struct eqos_dma_regs *dma_regs;
-    volatile struct eqos_tegra186_regs*tegra186_regs;
-    struct clock *clk_master_bus;
-    struct clock *clk_rx;
-    struct clock *clk_ptp_ref;
-    struct clock *clk_tx;
-    struct clock *clk_slave_bus;
-    struct mii_dev *mii;
-    struct phy_device *phy;
-    // uintptr_t last_rx_desc;
-    // uintptr_t last_tx_desc;
-    // unsigned char enetaddr[ARP_HLEN];
-    // bool reg_access_ok;
-    // ps_io_ops_t *tx2_io_ops;
-    gpio_sys_t *gpio_sys;
-    gpio_t gpio;
-    reset_sys_t *reset_sys;
-    clock_sys_t *clock_sys;
-};

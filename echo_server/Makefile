@@ -53,6 +53,7 @@ CFLAGS += -I$(BOARD_DIR)/include \
 	-I$(RINGBUFFERDIR)/include \
 	-I$(BENCHDIR)/include \
 	-I$(TX2BPMP)/include/tx2bpmp \
+	-Iuboot \
 
 # COREFILES, CORE4FILES: The minimum set of files needed for lwIP.
 COREFILES=$(LWIPDIR)/core/init.c \
@@ -92,7 +93,10 @@ NETIFFILES=$(LWIPDIR)/netif/ethernet.c
 LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES)
 LWIP_OBJS := $(LWIPFILES:.c=.o) lwip.o libsharedringbuffer/shared_ringbuffer.o utilization_socket.o udp_echo_socket.o timer.o
 
-ETH_OBJS := eth.o clock.o gpio.o reset.o libsharedringbuffer/shared_ringbuffer.o libtx2bpmp/src/ivc.o libtx2bpmp/src/hsp.o libtx2bpmp/src/bpmp.o
+UBOOT_OBJS := uboot/miiphyutil.o uboot/phy.o malloc.o
+# uboot/phy.o
+CLOCK_OBJS := clock.o gpio.o reset.o libtx2bpmp/src/ivc.o libtx2bpmp/src/hsp.o libtx2bpmp/src/bpmp.o
+ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o $(CLOCK_OBJS) $(UBOOT_OBJS)
 BENCH_OBJS := benchmark/benchmark.o
 IDLE_OBJS := benchmark/idle.o
 
@@ -133,13 +137,12 @@ directories:
     $(info $(shell mkdir -p $(BUILD_DIR)/libsharedringbuffer))	\
 	$(info $(shell mkdir -p $(BUILD_DIR)/benchmark))	\
 	$(info $(shell mkdir -p $(BUILD_DIR)/libtx2bpmp/src))	\
+	$(info $(shell mkdir -p $(BUILD_DIR)/uboot))	\
 
 
 clean:
 	rm -f *.o *.elf .depend*
 	find . -name \*.o |xargs --no-run-if-empty rm
-
-	$(info $(shell mkdir -p $(BUILD_DIR)/libtx2bpmp))	\
 
 $(UIMAGE_FILE): directories $(IMAGE_FILE)
 	mkimage -A arm64 -O linux -T kernel -C none -a 81000000 -e 81000000 -d $(IMAGE_FILE) $(UIMAGE_FILE)
