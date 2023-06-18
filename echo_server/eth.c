@@ -295,17 +295,11 @@ static int eqos_mdio_read(struct mii_dev *bus, int mdio_addr, int mdio_devad,
     uint32_t val;
     int ret;
 
-    print("&eqos->mac_regs->mdio_address = ");
-    puthex64(&eqos->mac_regs->mdio_address);
-    print("\n");
-
-    print("Before eqos_mdio_wait_idle\n");
     ret = eqos_mdio_wait_idle(eqos);
     if (ret) {
         print("MDIO not idle at entry");
         return ret;
     }
-    print("After eqos_mdio_wait_idle\n");
     
     val = eqos->mac_regs->mdio_address;
     val &= EQOS_MAC_MDIO_ADDRESS_SKAP |
@@ -321,9 +315,9 @@ static int eqos_mdio_read(struct mii_dev *bus, int mdio_addr, int mdio_devad,
 
     udelay(eqos->config->mdio_wait);
 
-    print("Before second wait\n");
+    __sync_synchronize();
     ret = eqos_mdio_wait_idle(eqos);
-    print("After second wait\n");
+
     
     if (ret) {
         print("MDIO read didn't complete");
@@ -364,6 +358,8 @@ static int eqos_mdio_write(struct mii_dev *bus, int mdio_addr, int mdio_devad,
     writel(val, &eqos->mac_regs->mdio_address);
 
     udelay(eqos->config->mdio_wait);
+
+    __sync_synchronize();
 
     ret = eqos_mdio_wait_idle(eqos);
     if (ret) {
@@ -1005,48 +1001,41 @@ int eqos_start()
 
     sel4cp_dbg_puts("After calibrate pads\n");
 
-
-    // /*
-    //  * if PHY was already connected and configured,
-    //  * don't need to reconnect/reconfigure again
-    //  */
-    // if (!eqos->phy) {
-    //     print("Before phy_connect()\n");
-    //     eqos->phy = phy_connect(eqos->mii, 0, NULL, PHY_INTERFACE_MODE_MII);
-    //     print("After phy_connect()\n");
+    /*
+     * if PHY was already connected and configured,
+     * don't need to reconnect/reconfigure again
+     */
+    if (!eqos->phy) {
+        eqos->phy = phy_connect(eqos->mii, 0, NULL, PHY_INTERFACE_MODE_MII);
         
-    //     if (!eqos->phy) {
-    //         print("phy_connect() failed");
-    //         // goto err_stop_resets;
-    //         return -1;
-    //     }
-    //     print("Before phy_config()\n");
+        if (!eqos->phy) {
+            print("phy_connect() failed");
+            // goto err_stop_resets;
+            return -1;
+        }
 
-    //     ret = phy_config(eqos->phy);
-    //     print("After phy_config()\n");
-    //     if (ret < 0) {
-    //         // print("phy_config() failed: %d", ret);
-    //         print("phy_config() failed: %d\n");
-    //         return -1;
-    //     }
-    // }
+        ret = phy_config(eqos->phy);
+        if (ret < 0) {
+            // print("phy_config() failed: %d", ret);
+            print("phy_config() failed: %d\n");
+            return -1;
+        }
+    }
 
-    // if (!eqos->phy)
-    //     sel4cp_dbg_puts("For some reason the phy is not on????\n");
+    if (!eqos->phy)
+        sel4cp_dbg_puts("For some reason the phy is not on????\n");
     
-    // print("Before phy_startup()\n");
-    // ret = phy_startup(eqos->phy);
-    // print("After phy_startup()\n");
-    // if (ret < 0) {
-    //     // print("phy_startup() failed: %d", ret);
-    //     print("phy_startup() failed: %d\n");
-    //     return -1;
-    // }
+    ret = phy_startup(eqos->phy);
+    if (ret < 0) {
+        // print("phy_startup() failed: %d", ret);
+        print("phy_startup() failed: %d\n");
+        return -1;
+    }
 
-    // if (!eqos->phy->link) {
-    //     print("No link");
-    //     return -1;
-    // }
+    if (!eqos->phy->link) {
+        print("No link");
+        return -1;
+    }
 
     // ret = eqos_adjust_link(eqos);
     // if (ret < 0) {

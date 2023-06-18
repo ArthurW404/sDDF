@@ -260,7 +260,7 @@ int genphy_update_link(struct phy_device *phydev)
         !(mii_reg & BMSR_ANEGCOMPLETE)) {
         int i = 0;
 
-        print("Waiting for PHY auto negotiation to complete\n");
+        print("Waiting for PHY auto negotiation to complete");
         // printf("%s Waiting for PHY auto negotiation to complete", phydev->dev->name);
         // fflush(stdout);
         while (!(mii_reg & BMSR_ANEGCOMPLETE)) {
@@ -273,7 +273,7 @@ int genphy_update_link(struct phy_device *phydev)
                 return -ETIMEDOUT;
             }
 
-            if ((i++ % 500) == 0) {
+            if ((i++ % 200) == 0) {
                 print(".");
             }
 
@@ -693,7 +693,6 @@ int __weak get_phy_id(struct mii_dev *bus, int addr, int devad, u32 *phy_id)
     int phy_reg;
 
 
-    print("Before bus read\n");
     /* Grab the bits from PHYIR1, and put them
      * in the upper half */
     phy_reg = bus->read(bus, addr, devad, MII_PHYSID1);
@@ -704,7 +703,6 @@ int __weak get_phy_id(struct mii_dev *bus, int addr, int devad, u32 *phy_id)
 
     *phy_id = (phy_reg & 0xffff) << 16;
 
-    print("Before bus read 2\n");
 
     /* Grab the bits from PHYIR2, and put them in the lower half */
     phy_reg = bus->read(bus, addr, devad, MII_PHYSID2);
@@ -722,13 +720,7 @@ static struct phy_device *create_phy_by_mask(struct mii_dev *bus,
                                              unsigned phy_mask, int devad, phy_interface_t interface)
 {
     u32 phy_id = 0xffffffff;
-    print("called create_phy_by_mask\n");
     while (phy_mask) {
-        
-        print("phy_mask = ");
-        puthex64(phy_mask);
-        print("\n");
-
         int addr = ffs(phy_mask) - 1;
         int r = get_phy_id(bus, addr, devad, &phy_id);
         /* If the PHY ID is mostly f's, we didn't find anything */
@@ -760,9 +752,7 @@ static struct phy_device *get_phy_device_by_mask(struct mii_dev *bus,
 {
     int i;
     struct phy_device *phydev;
-    print("called get_phy_device_by_mask\n");
     phydev = search_for_existing_phy(bus, phy_mask, interface);
-    print("after search_for_existing_phy\n");
     
     if (phydev) {
         return phydev;
@@ -771,10 +761,8 @@ static struct phy_device *get_phy_device_by_mask(struct mii_dev *bus,
     /* Try Standard (ie Clause 22) access */
     /* Otherwise we have to try Clause 45 */
     for (i = 0; i < 5; i++) {
-        print("before create_phy_by_mask\n");
         phydev = create_phy_by_mask(bus, phy_mask,
                                     i ? i : MDIO_DEVAD_NONE, interface);
-        print("after create_phy_by_mask\n");
         if (IS_ERR(phydev)) {
             return NULL;
         }
@@ -828,12 +816,10 @@ int phy_reset(struct phy_device *phydev)
         devad = ffs(phydev->mmds) - 1;
     }
 #endif
-    print("Before phy_write\n");
     if (phy_write(phydev, devad, MII_BMCR, BMCR_RESET) < 0) {
         debug("PHY reset failed\n");
         return -1;
     }
-    print("After phy_write\n");
 
 
 #ifdef CONFIG_PHY_RESET_DELAY
@@ -844,15 +830,11 @@ int phy_reset(struct phy_device *phydev)
      * auto-clearing).  This should happen within 0.5 seconds per the
      * IEEE spec.
      */
-    print("Before phy_read\n");
 
     reg = phy_read(phydev, devad, MII_BMCR);
-    print("After phy_read\n");
     
     while ((reg & BMCR_RESET) && timeout--) {
-        print("Before loop phy_read\n");
         reg = phy_read(phydev, devad, MII_BMCR);
-        print("After loop phy_read\n");
 
         if (reg < 0) {
             debug("PHY status read failed\n");
@@ -890,14 +872,11 @@ struct phy_device *phy_find_by_mask(struct mii_dev *bus, unsigned phy_mask,
 {
     /* Reset the bus */
     if (bus->reset) {
-        print("Before bus->reset\n");
         bus->reset(bus);
-        print("After bus->reset\n");
 
         /* Wait 15ms to make sure the PHY has come out of hard reset */
         udelay(15000);
     }
-    print("Before get_phy_device_by_mask\n");
     return get_phy_device_by_mask(bus, phy_mask, interface);
 }
 
@@ -907,10 +886,8 @@ void phy_connect_dev(struct phy_device *phydev, struct udevice *dev)
 void phy_connect_dev(struct phy_device *phydev, struct eth_device *dev)
 #endif
 {
-    print("Before phy_reset\n");
     /* Soft Reset the PHY */
     phy_reset(phydev);
-    print("After phy_reset\n");
 
     if (phydev->dev && phydev->dev != dev) {
         // printf("%s:%d is connected to %s.  Reconnecting to %s\n",
@@ -931,16 +908,10 @@ struct phy_device *phy_connect(struct mii_dev *bus, int addr,
 {
     struct phy_device *phydev;
 
-    print("Called phy_connect\n");
     phydev = phy_find_by_mask(bus, 0xffffffff, interface);
-    print("After phy_find_by_mask\n");
-
 
     if (phydev) {
-        print("Before phy_connect_dev\n");
         phy_connect_dev(phydev, dev);
-        print("After phy_connect_dev\n");
-
     } else {
         // printf("Could not get PHY for %s: addr %d\n", bus->name, addr);
         print("Could not get PHY for %s: addr %d\n");
