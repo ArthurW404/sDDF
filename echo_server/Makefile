@@ -93,7 +93,7 @@ NETIFFILES=$(LWIPDIR)/netif/ethernet.c
 LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES)
 LWIP_OBJS := $(LWIPFILES:.c=.o) lwip.o libsharedringbuffer/shared_ringbuffer.o utilization_socket.o udp_echo_socket.o timer.o
 
-UBOOT_OBJS := uboot/miiphyutil.o uboot/phy.o malloc.o
+UBOOT_OBJS := uboot/miiphyutil.o uboot/phy.o uboot/dwc_eth_qos.o malloc.o 
 # uboot/phy.o
 CLOCK_OBJS := clock.o gpio.o reset.o libtx2bpmp/src/ivc.o libtx2bpmp/src/hsp.o libtx2bpmp/src/bpmp.o
 ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o $(CLOCK_OBJS) $(UBOOT_OBJS)
