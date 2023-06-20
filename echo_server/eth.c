@@ -30,7 +30,7 @@
 
 /* Memory regions. These all have to be here to keep compiler happy */
 uintptr_t hw_ring_buffer_vaddr;
-uintptr_t hw_ring_buffer_paddr;
+// uintptr_t hw_ring_buffer_paddr;
 uintptr_t shared_dma_vaddr;
 uintptr_t shared_dma_paddr;
 uintptr_t rx_cookies;
@@ -325,6 +325,11 @@ static void handle_tx(struct eqos_priv *eqos)
     // We need to put in an empty condition here. 
     while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
         print("In driver_dequeue\n");
+
+        print("|handle_tx| Buffer = ");
+        printn(buffer, len);
+        print("\n");
+
         uintptr_t phys = getPhysAddr(buffer);
         raw_tx(eqos, 1, &phys, &len, cookie);
     }
@@ -364,6 +369,10 @@ eth_setup(void)
     // puthex64(tx.descr);
     // print("\n");
 
+    // print("hw_ring_buffer_paddr = ");
+    // puthex64(hw_ring_buffer_paddr);
+    // print("\n");
+
     tx2_initialise(eqos, eth_base_reg);
 
     return;
@@ -384,7 +393,6 @@ void init_post()
 
     // do we need tx?
     eqos_dma_enable_txirq(eqos);
-
 
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");
@@ -436,8 +444,6 @@ void notified(sel4cp_channel ch)
         case IRQ_CH:
             sel4cp_dbg_puts("===> RX irq invoked\n");
             handle_eth(eqos);
-
-
             have_signal = true;
             signal_msg = seL4_MessageInfo_new(IRQAckIRQ, 0, 0, 0);
             signal = (BASE_IRQ_CAP + IRQ_CH);

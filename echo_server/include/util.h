@@ -48,6 +48,18 @@ print(const char *s)
     }
 }
 
+
+static void
+printn(const char *s, int n)
+{
+    int i = 0;
+    while (*s || i < n) {
+        putC(*s);
+        s++;
+        i++;
+    }
+}
+
 static char
 hexchar(unsigned int v)
 {
