@@ -378,12 +378,23 @@ static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
     mac[5] = h >> 16 & 0xff;
 }
 
+/* MAC HW ADDR regs */
+// from linux dwmac4.h
+#define GMAC_HI_REG_AE			BIT(31)
+
+
 static void set_mac(struct eqos_priv *eqos, uint8_t *mac)
 {
+    // using tx2a mac address since
     unsigned char enetaddr[ARP_HLEN];
     memcpy(enetaddr, TX2_DEFAULT_MAC, 6);
     uint32_t val1 = (enetaddr[5] << 8) | (enetaddr[4]);
-    eqos->mac_regs->address0_high = val1;
+
+    /* For MAC Addr registers se have to set the Address Enable (AE)
+	 * bit that has no effect on the High Reg 0 where the bit 31 (MO)
+	 * is RO.
+	 */
+    eqos->mac_regs->address0_high = val1  | GMAC_HI_REG_AE;
     val1 = (enetaddr[3] << 24) | (enetaddr[2] << 16) |
            (enetaddr[1] << 8) | (enetaddr[0]);
 

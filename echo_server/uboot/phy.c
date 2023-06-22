@@ -489,6 +489,8 @@ static struct phy_driver genphy_driver = {
 
 static LIST_HEAD(phy_drivers);
 
+#define CONFIG_PHY_BROADCOM
+
 int phy_init(void)
 {
 #ifdef CONFIG_MV88E61XX_SWITCH
@@ -501,10 +503,12 @@ int phy_init(void)
     phy_atheros_init();
 #endif
 #ifdef CONFIG_PHY_BROADCOM
+    print("|phy_init|Initialiating broadcom\n");
     phy_broadcom_init();
 #endif
 #ifdef CONFIG_PHY_CORTINA
     phy_cortina_init();
+
 #endif
 #ifdef CONFIG_PHY_DAVICOM
     phy_davicom_init();
@@ -722,6 +726,9 @@ static struct phy_device *create_phy_by_mask(struct mii_dev *bus,
     u32 phy_id = 0xffffffff;
     while (phy_mask) {
         int addr = ffs(phy_mask) - 1;
+        print("|create_phy_by_mask|addr =");
+        puthex64(addr);
+        print("\n");
         int r = get_phy_id(bus, addr, devad, &phy_id);
         /* If the PHY ID is mostly f's, we didn't find anything */
         if (r == 0 && (phy_id & 0x1fffffff) != 0x1fffffff) {

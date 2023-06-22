@@ -77,7 +77,6 @@ void eqos_dma_enable_rxirq(struct eqos_priv *eqos)
     puthex64(eqos->dma_regs->ch0_dma_ie);
     print("\n");
 
-
     regval = eqos->dma_regs->ch0_dma_ie;
     regval |= DWCEQOS_DMA_CH0_IE_RIE;
 
@@ -406,9 +405,9 @@ static int eqos_disable_calibration_tegra186(struct eqos_priv *eqos)
     return 0;
 }
 
-static UNUSED freq_t eqos_get_tick_clk_rate_tegra186(struct eqos_priv *eqos)
+static freq_t eqos_get_tick_clk_rate_tegra186(struct eqos_priv *eqos)
 {
-    return clk_get_freq(eqos->clk_slave_bus);
+    return eqos->clk_rx->get_freq(eqos->clk_slave_bus);
 }
 
 
@@ -576,7 +575,10 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
     print("eqos->tx->tail = ");
     puthex64(eqos->tx->tail);
     print("\n");
-    
+
+    print("|eqos_send|packet =");
+    puthex64(packet);
+    print("\n");
     // print("packet = ");
     // printn(packet, length);
     // print("\n");
@@ -614,16 +616,16 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
     puthex64(eqos->dma_regs->ch0_txdesc_tail_pointer);
     print("\n");
 
-    // for (int i = 0; i < 1000000; i++) {
-	// 	// eqos->config->ops->eqos_inval_desc(tx_desc);
-	// 	if (!(tx_desc->des3 & EQOS_DESC3_OWN)) {
-    //         sel4cp_dbg_puts("Something happened!\n");
-	// 		return 0;
-    //     }
-	// 	udelay(1);
-	// }
+    for (int i = 0; i < 1000000; i++) {
+		// eqos->config->ops->eqos_inval_desc(tx_desc);
+		if (!(tx_desc->des3 & EQOS_DESC3_OWN)) {
+            sel4cp_dbg_puts("Something happened!\n");
+			return 0;
+        }
+		udelay(1);
+	}
 
-    // print("Eqos send timedout\n");
+    print("Eqos send timedout\n");
 
     return 0;
 }
@@ -680,6 +682,7 @@ int eqos_start(struct eqos_priv *eqos)
 {
     uint32_t *dma_ie;
     uint32_t ret, val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
+    freq_t rate;
 
     ret = eqos_start_clks_tegra186(eqos);
     if (ret) {
@@ -729,6 +732,12 @@ int eqos_start(struct eqos_priv *eqos)
 
     sel4cp_dbg_puts("After calibrate pads\n");
 
+	rate = eqos_get_tick_clk_rate_tegra186(eqos);
+	val = (rate / 1000000) - 1;
+	writel(val, &eqos->mac_regs->us_tic_counter);
+
+    __sync_synchronize();
+
     /*
      * if PHY was already connected and configured,
      * don't need to reconnect/reconfigure again
@@ -768,6 +777,7 @@ int eqos_start(struct eqos_priv *eqos)
     ret = eqos_adjust_link(eqos);
     if (ret < 0) {
         print("eqos_adjust_link() failed: %d\n");
+
         // goto err_shutdown_phy;
         return -1;
     }
@@ -897,8 +907,8 @@ int eqos_start(struct eqos_priv *eqos)
                                                 EQOS_MTL_RXQ0_OPERATION_MODE_RFA_SHIFT);
     }
 
-    // dma_ie = (uint32_t *)(eqos->regs + 0xc30);
-    // *dma_ie = 0x3020100;
+    dma_ie = (uint32_t *)(eqos->regs + 0xc30);
+    *dma_ie = 0x3020100;
 
     /* Configure MAC, not sure if L4T is the same */
     eqos->mac_regs->rxq_ctrl0 &= EQOS_MAC_RXQ_CTRL0_RXQ0EN_MASK <<
@@ -1009,30 +1019,30 @@ int eqos_start(struct eqos_priv *eqos)
     eqos->dma_regs->ch0_rxdesc_list_address = hw_ring_buffer_paddr;
     eqos->dma_regs->ch0_rxdesc_ring_length = RX_COUNT - 1;
     
-    // print("init: ch dma ie = ");
-    // puthex64(eqos->dma_regs->ch0_dma_ie);
-    // print("\n");    
+    print("init: ch dma ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");    
     
-    // eqos->dma_regs->ch0_dma_ie = 0;
+    eqos->dma_regs->ch0_dma_ie = 0;
 
-    // print("init: ch dma ie = ");
-    // puthex64(eqos->dma_regs->ch0_dma_ie);
-    // print("\n");    
+    print("init: ch dma ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");    
 
-    // eqos->dma_regs->ch0_dma_ie = DWCEQOS_DMA_CH0_IE_RIE | DWCEQOS_DMA_CH0_IE_TIE |
-    //                              DWCEQOS_DMA_CH0_IE_NIE | DWCEQOS_DMA_CH0_IE_AIE |
-    //                              DWCEQOS_DMA_CH0_IE_FBEE | DWCEQOS_DMA_CH0_IE_RWTE;
+    eqos->dma_regs->ch0_dma_ie = DWCEQOS_DMA_CH0_IE_RIE | DWCEQOS_DMA_CH0_IE_TIE |
+                                 DWCEQOS_DMA_CH0_IE_NIE | DWCEQOS_DMA_CH0_IE_AIE |
+                                 DWCEQOS_DMA_CH0_IE_FBEE | DWCEQOS_DMA_CH0_IE_RWTE;
     
-    // print("init: ch dma ie = ");
-    // puthex64(eqos->dma_regs->ch0_dma_ie);
-    // print("\n");    
+    print("init: ch dma ie = ");
+    puthex64(eqos->dma_regs->ch0_dma_ie);
+    print("\n");    
 
-    // eqos->dma_regs->ch0_dma_rx_int_wd_timer = 120;
-    // udelay(100);
+    eqos->dma_regs->ch0_dma_rx_int_wd_timer = 120;
+    udelay(100);
 
-    eqos->dma_regs->ch0_tx_control = EQOS_DMA_CH0_TX_CONTROL_ST;
-    eqos->dma_regs->ch0_rx_control = EQOS_DMA_CH0_RX_CONTROL_SR;
-    eqos->mac_regs->configuration = EQOS_MAC_CONFIGURATION_TE | EQOS_MAC_CONFIGURATION_RE;
+    eqos->dma_regs->ch0_tx_control |= EQOS_DMA_CH0_TX_CONTROL_ST;
+    eqos->dma_regs->ch0_rx_control |= EQOS_DMA_CH0_RX_CONTROL_SR;
+    eqos->mac_regs->configuration |= EQOS_MAC_CONFIGURATION_TE | EQOS_MAC_CONFIGURATION_RE;
     // last_rx_desc = (eqos->rx->phys + ((EQOS_DESCRIPTORS_RX) * (uintptr_t)(sizeof(struct eqos_desc))));
     // last_tx_desc = (tx.phys + ((EQOS_DESCRIPTORS_TX) * (uintptr_t)(sizeof(struct eqos_desc))));
 
@@ -1081,20 +1091,6 @@ void *tx2_initialise(struct eqos_priv *eqos,uintptr_t base_addr)
 {
     print("|tx2_initialise| called\n");
 
-    print("====> &tx2_initialise_hardware = ");
-    puthex64(&tx2_initialise_hardware);
-    print("\n");
-
-    print("====> &miiphy_reset = ");
-    puthex64(&miiphy_reset);
-    print("\n");
-
-    char *test = "this is a test string\n";
-
-    print("====> test = ");
-    puthex64(test);
-    print("\n");
-
     int ret;
 
     /* initialise miiphy */
@@ -1105,7 +1101,7 @@ void *tx2_initialise(struct eqos_priv *eqos,uintptr_t base_addr)
     if (ret != 0) {
         print("failed to initialise phy");
     }
-  
+
     ret = tx2_initialise_hardware(eqos);
     if (ret < 0) {
         sel4cp_dbg_puts("tx2_initialise_hardware() failed");
@@ -1155,12 +1151,12 @@ void *tx2_initialise(struct eqos_priv *eqos,uintptr_t base_addr)
         return NULL;
     }
 
-//     return (void *)eqos;
-// err_free_mdio:
-//     mdio_free(eqos->mii);
-// err:
-//     print("Tx2 initialise failed");
-//     return NULL;
+    return (void *)eqos;
+err_free_mdio:
+    mdio_free(eqos->mii);
+err:
+    print("Tx2 initialise failed");
+    return NULL;
 
-    return eqos;
+    // return eqos;
 }

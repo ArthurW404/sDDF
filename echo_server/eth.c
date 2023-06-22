@@ -73,6 +73,9 @@ static void update_ring_slot(
     uint32_t len,
     uint32_t flags)
 {
+    // sel4cp_dbg_puts("|update_ring_slot| phys =");
+    // puthex64(phys);
+    // sel4cp_dbg_puts("\n");
     volatile struct eqos_desc *d = &(ring->descr[idx]);
     // print("after getting d\n");
     d->des0 = phys;
@@ -288,7 +291,7 @@ raw_tx(struct eqos_priv *eqos, unsigned int num, uintptr_t *phys,
         puthex64(len[0]);
         print("\n");
 
-        err = eqos_send(eqos, (void *)phys[i], len[i]);
+        err = eqos_send(eqos, *phys++, *len++);
         // if (err == -ETIMEDOUT) {
         //     print("send timed out");
         // }
@@ -331,6 +334,11 @@ static void handle_tx(struct eqos_priv *eqos)
         print("\n");
 
         uintptr_t phys = getPhysAddr(buffer);
+
+        print("|handle_tx| phys = ");
+        puthex64(phys);
+        print("\n");
+
         raw_tx(eqos, 1, &phys, &len, cookie);
     }
 }

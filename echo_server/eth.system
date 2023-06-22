@@ -85,6 +85,12 @@
         <irq irq="226" id="17" />
         <irq irq="227" id="18" />
 
+        <!-- phy gpio? -->
+        <irq irq="88" id="19" />
+        <irq irq="56" id="23" />
+        <irq irq="133" id="22" />
+        <irq irq="101" id="24" />
+
         <!-- <irq irq="152" id="1" /> -->
 
         <map mr="uart" vaddr="0x5_000_000" perms="rw" cached="false" setvar_vaddr="uart_base" />
