@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <system>
-    <memory_region name="uart" size="0x10_000" phys_addr="0x30890000" />
-    <memory_region name="eth0" size="0x10_000" phys_addr="0x30be0000" />
+    <memory_region name="uart" size="0x10_000" phys_addr="0xff000000" />
+    <memory_region name="eth0" size="0x10_000" phys_addr="0xff0e0000" />
 
-    <memory_region name="timer" size="0x10_000" phys_addr="0x302d0000" />
+    <memory_region name="timer" size="0x10_000" phys_addr="0xff110000" />
+
     <memory_region name="hw_ring_buffer" size="0x1_000" />
     <memory_region name="shared_dma" size="0x200_000" page_size="0x200_000" />
 

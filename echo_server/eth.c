@@ -488,8 +488,11 @@ void init(void)
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": elf PD init function running\n");
 
-    eth_setup();
+    // eth_setup();
 
+    int num = print("Hello\n");
+    puthex64(num);
+    print("\n");
     /* Now wait for notification from lwip that buffers are initialised */
 }
 

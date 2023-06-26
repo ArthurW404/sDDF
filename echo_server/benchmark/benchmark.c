@@ -195,37 +195,37 @@ void notified(sel4cp_channel ch)
 
 void init(void)
 {
-    sel4bench_init();
-    seL4_Word n_counters = sel4bench_get_num_counters();
-    int n_chunks = DIV_ROUND_UP(ARRAY_SIZE(benchmarking_events), n_counters);
+//     sel4bench_init();
+//     seL4_Word n_counters = sel4bench_get_num_counters();
+//     int n_chunks = DIV_ROUND_UP(ARRAY_SIZE(benchmarking_events), n_counters);
 
 
-    counter_bitfield_t mask = 0;
+//     counter_bitfield_t mask = 0;
 
-    for (seL4_Word i = 0; i < n_counters; i++) {
-        seL4_Word counter = i;
-        if (counter >= ARRAY_SIZE(benchmarking_events)) {
-            break;
-        }
-        sel4bench_set_count_event(i, benchmarking_events[counter]);
-        mask |= BIT(i);
-    }
+//     for (seL4_Word i = 0; i < n_counters; i++) {
+//         seL4_Word counter = i;
+//         if (counter >= ARRAY_SIZE(benchmarking_events)) {
+//             break;
+//         }
+//         sel4bench_set_count_event(i, benchmarking_events[counter]);
+//         mask |= BIT(i);
+//     }
 
-    sel4bench_reset_counters();
-    sel4bench_start_counters(mask);
+//     sel4bench_reset_counters();
+//     sel4bench_start_counters(mask);
 
-    benchmark_bf = mask;
+//     benchmark_bf = mask;
 
-    /* Notify the idle thread that the sel4bench library is initialised. */
-    sel4cp_notify(INIT);
+//     /* Notify the idle thread that the sel4bench library is initialised. */
+//     sel4cp_notify(INIT);
 
-#ifdef CONFIG_BENCHMARK_TRACK_KERNEL_ENTRIES
-    int res_buf = seL4_BenchmarkSetLogBuffer(LOG_BUFFER_CAP);
-    if (res_buf) {
-        print("Could not set log buffer");
-        puthex64(res_buf);
-    } else {
-        print("We set the log buffer\n");
-    }
-#endif
+// #ifdef CONFIG_BENCHMARK_TRACK_KERNEL_ENTRIES
+//     int res_buf = seL4_BenchmarkSetLogBuffer(LOG_BUFFER_CAP);
+//     if (res_buf) {
+//         print("Could not set log buffer");
+//         puthex64(res_buf);
+//     } else {
+//         print("We set the log buffer\n");
+//     }
+// #endif
 }
