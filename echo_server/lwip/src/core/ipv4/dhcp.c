@@ -62,6 +62,7 @@
  * Author: Leon Woestenberg <leon.woestenberg@gmx.net>
  *
  */
+#include "util.h"
 
 #include "lwip/opt.h"
 
@@ -803,9 +804,11 @@ dhcp_start(struct netif *netif)
   result = dhcp_discover(netif);
   if (result != ERR_OK) {
     /* free resources allocated above */
+    sel4cp_dbg_puts("==> DHCP_discover error\n");
     dhcp_release_and_stop(netif);
     return ERR_MEM;
   }
+  sel4cp_dbg_puts("==> DHCP_discover worked?\n");
   return result;
 }
 
@@ -1017,6 +1020,15 @@ dhcp_discover(struct netif *netif)
     }
     LWIP_HOOK_DHCP_APPEND_OPTIONS(netif, dhcp, DHCP_STATE_SELECTING, msg_out, DHCP_DISCOVER, &options_out_len);
     dhcp_option_trailer(options_out_len, msg_out->options, p_out);
+
+    
+    sel4cp_dbg_puts("|dhcp_discover|options_out_len = ");
+    puthex64(options_out_len);
+    sel4cp_dbg_puts("\n");
+
+    sel4cp_dbg_puts("|dhcp_discover|p_out->payload = ");
+    printn(p_out->payload, options_out_len);
+    sel4cp_dbg_puts("\n");
 
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_discover: sendto(DISCOVER, IP_ADDR_BROADCAST, LWIP_IANA_PORT_DHCP_SERVER)\n"));
     udp_sendto_if_src(dhcp_pcb, p_out, IP_ADDR_BROADCAST, LWIP_IANA_PORT_DHCP_SERVER, netif, IP4_ADDR_ANY);

@@ -36,7 +36,7 @@
 
 #include "wait_bit.h"
 #include "io.h"
-#include "eth.h"
+#include "dwc_eth_qos.h"
 #include "tx2_configs.h"
 #include "util.h"
 
@@ -145,33 +145,39 @@ void eqos_set_rx_tail_pointer(struct eqos_priv *eqos)
     }
 }
 
-// int eqos_handle_irq(struct tx2_eth_data *dev, int irq)
-// {
-//     struct eqos_priv *eqos = (struct eqos_priv *)dev->eth_dev;
 
-//     uint32_t cause = eqos->dma_regs->dma_control[0];
-//     uint32_t *dma_status;
-//     int ret = 0;
+#define TX_IRQ BIT(0)
+#define RX_IRQ BIT(1)
 
-//     if (cause & DWCEQOS_DMA_IS_DC0IS) {
-//         dma_status = (uint32_t *)(eqos->regs + REG_DWCEQOS_DMA_CH0_STA);
+int eqos_handle_irq(struct eqos_priv *eqos, int irq)
+{
+    // struct eqos_priv *eqos = (struct eqos_priv *)dev->eth_dev;
 
-//         /* Transmit Interrupt */
-//         if (*dma_status & DWCEQOS_DMA_CH0_IS_TI) {
-//             ret |= TX_IRQ;
-//         }
+    uint32_t cause = eqos->dma_regs->dma_control[0];
+    uint32_t *dma_status;
+    int ret = 0;
 
-//         /* Receive Interrupt */
-//         if (*dma_status & DWCEQOS_DMA_CH0_IS_RI) {
-//             ret |= RX_IRQ;
-//         }
+    if (cause & DWCEQOS_DMA_IS_DC0IS) {
+        dma_status = (uint32_t *)(eqos->regs + REG_DWCEQOS_DMA_CH0_STA);
+        print("-->In DWCEQOS_DMA_IS_DC0IS\n");
+        /* Transmit Interrupt */
+        if (*dma_status & DWCEQOS_DMA_CH0_IS_TI) {
+            print("-->is TX interrupt\n");
+            ret |= TX_IRQ;
+        }
 
-//         /* Ack */
-//         *dma_status = *dma_status;
-//     }
+        /* Receive Interrupt */
+        if (*dma_status & DWCEQOS_DMA_CH0_IS_RI) {
+            print("-->is RX interrupt\n");
+            ret |= RX_IRQ;
+        }
 
-//     return ret;
-// }
+        /* Ack */
+        *dma_status = *dma_status;
+    }
+
+    return ret;
+}
 
 static int eqos_mdio_wait_idle(struct eqos_priv *eqos)
 {
@@ -528,6 +534,13 @@ static int eqos_adjust_link(struct eqos_priv *eqos)
         return ret;
     }
 
+    print("|eqos_adjust_link|before eqos_set_tx_clk_speed_tegra186\n");
+    ret = eqos_set_tx_clk_speed_tegra186(eqos);
+    if (ret < 0) {
+        print("eqos_set_tx_clk_speed() failed: %d\n");
+        return ret;
+    }
+
     if (en_calibration) {
         print("|eqos_adjust_link|before eqos_calibrate_pads_tegra186\n");
         ret = eqos_calibrate_pads_tegra186(eqos);
@@ -540,13 +553,6 @@ static int eqos_adjust_link(struct eqos_priv *eqos)
         if (ret < 0) {
             return ret;
         }
-    }
-
-    print("|eqos_adjust_link|before eqos_set_tx_clk_speed_tegra186\n");
-    ret = eqos_set_tx_clk_speed_tegra186(eqos);
-    if (ret < 0) {
-        print("eqos_set_tx_clk_speed() failed: %d\n");
-        return ret;
     }
 
 
@@ -630,7 +636,6 @@ int eqos_send(struct eqos_priv *eqos, void *packet, int length)
     return 0;
 }
 
-
 static const struct eqos_config eqos_tegra186_config = {
     .reg_access_always_ok = false,
     .mdio_wait = 10,
@@ -705,11 +710,11 @@ int eqos_start(struct eqos_priv *eqos)
 
     udelay(10);
 
-    /*
-	 * Assert the SWR first, the actually reset the MAC and to latch in
-	 * e.g. i.MX8M Plus GPR[1] content, which selects interface mode.
-	 */
-    eqos->dma_regs->mode = (EQOS_DMA_MODE_SWR);
+    // /*
+	//  * Assert the SWR first, the actually reset the MAC and to latch in
+	//  * e.g. i.MX8M Plus GPR[1] content, which selects interface mode.
+	//  */
+    // eqos->dma_regs->mode = (EQOS_DMA_MODE_SWR);
 
     ret = wait_for_bit_le32(&eqos->dma_regs->mode,
                             EQOS_DMA_MODE_SWR, false,
@@ -732,11 +737,11 @@ int eqos_start(struct eqos_priv *eqos)
 
     sel4cp_dbg_puts("After calibrate pads\n");
 
-	rate = eqos_get_tick_clk_rate_tegra186(eqos);
-	val = (rate / 1000000) - 1;
-	writel(val, &eqos->mac_regs->us_tic_counter);
+	// rate = eqos_get_tick_clk_rate_tegra186(eqos);
+	// val = (rate / 1000000) - 1;
+	// writel(val, &eqos->mac_regs->us_tic_counter);
 
-    __sync_synchronize();
+    // __sync_synchronize();
 
     /*
      * if PHY was already connected and configured,
@@ -782,10 +787,25 @@ int eqos_start(struct eqos_priv *eqos)
         return -1;
     }
 
+
+
     get_mac_addr(eqos, mac);
     sel4cp_dbg_puts("MAC: ");
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
+
+    ret = eqos_start_resets_tegra186(eqos);
+    if (ret) {
+        sel4cp_dbg_puts("eqos_start_resets_tegra186 failed");
+        // goto err_stop_clks;
+        return -1;
+    }
+
+    udelay(10);
+
+    ret = wait_for_bit_le32(&eqos->dma_regs->mode,
+                            EQOS_DMA_MODE_SWR, false,
+                            eqos->config->swr_wait, false);
 
     volatile uint32_t *dma_status = (uint32_t *)(eqos->regs + REG_DWCEQOS_DMA_CH0_STA);
     
@@ -805,12 +825,10 @@ int eqos_start(struct eqos_priv *eqos)
 
     /* Configure MTL */
 
-    // /* Flush TX queue */
-    // eqos->mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_FTQ);
+    /* Flush TX queue */
+    eqos->mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_FTQ);
 
-    // while (*((uint32_t *)eqos->regs + 0xd00));
-
-
+    while (*((uint32_t *)eqos->regs + 0xd00));
     /* Enable Store and Forward mode for TX */
     eqos->mtl_regs->txq0_operation_mode = (EQOS_MTL_TXQ0_OPERATION_MODE_TSF);
     /* Program Tx operating mode */
@@ -824,38 +842,17 @@ int eqos_start(struct eqos_priv *eqos)
 
     /* Transmit/Receive queue fifo size; use all RAM for 1 queue */
     val = eqos->mac_regs->hw_feature1;
-
-    print("eqos->mac_regs->hw_feature1 = ");
-    puthex64(val);
-    print("\n");
-
     tx_fifo_sz = (val >> EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_SHIFT) &
                  EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_MASK;
     rx_fifo_sz = (val >> EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_SHIFT) &
                  EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_MASK;
 
-
-    print("tx_fifo_sz = ");
-    puthex64(tx_fifo_sz);
-    print("\n");
-
-    print("rx_fifo_sz = ");
-    puthex64(rx_fifo_sz);
-    print("\n");
     /*
      * r/tx_fifo_sz is encoded as log2(n / 128). Undo that by shifting.
      * r/tqs is encoded as (n / 256) - 1.
      */
     tqs = (128 << tx_fifo_sz) / 256 - 1;
     rqs = (128 << rx_fifo_sz) / 256 - 1;
-
-    print("tqs = ");
-    puthex64(tqs);
-    print("\n");
-
-    print("rqs = ");
-    puthex64(rqs);
-    print("\n");
 
     eqos->mtl_regs->txq0_operation_mode &= ~(EQOS_MTL_TXQ0_OPERATION_MODE_TQS_MASK <<
                                              EQOS_MTL_TXQ0_OPERATION_MODE_TQS_SHIFT);
@@ -868,7 +865,7 @@ int eqos_start(struct eqos_priv *eqos)
 
     /* Flow control used only if each channel gets 4KB or more FIFO */
     if (rqs >= ((4096 / 256) - 1)) {
-        uint32_t rfd, rfa;
+        u32 rfd, rfa;
 
         eqos->mtl_regs->rxq0_operation_mode |= (EQOS_MTL_RXQ0_OPERATION_MODE_EHFC);
 
@@ -911,10 +908,7 @@ int eqos_start(struct eqos_priv *eqos)
     *dma_ie = 0x3020100;
 
     /* Configure MAC, not sure if L4T is the same */
-    eqos->mac_regs->rxq_ctrl0 &= EQOS_MAC_RXQ_CTRL0_RXQ0EN_MASK <<
-			EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT;
-
-    eqos->mac_regs->rxq_ctrl0 |=
+    eqos->mac_regs->rxq_ctrl0 =
         (eqos->config->config_mac <<
          EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT);
 
@@ -922,9 +916,7 @@ int eqos_start(struct eqos_priv *eqos)
     /* Set Pause Time */
     eqos->mac_regs->q0_tx_flow_ctrl = (0xffff << EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT);
     /* Assign priority for RX flow control */
-    // eqos->mac_regs->rxq_ctrl2 = (1 << EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT);
-    eqos->mac_regs->rxq_ctrl2 = (EQOS_MAC_RXQ_CTRL2_PSRQ0_MASK <<
-		     EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT);
+    eqos->mac_regs->rxq_ctrl2 = (1 << EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT);
 
     /* Enable flow control */
     eqos->mac_regs->q0_tx_flow_ctrl |= (EQOS_MAC_Q0_TX_FLOW_CTRL_TFE);
@@ -937,18 +929,24 @@ int eqos_start(struct eqos_priv *eqos)
           EQOS_MAC_CONFIGURATION_JD |
           EQOS_MAC_CONFIGURATION_JE);
 
-    eqos->mac_regs->configuration |= EQOS_MAC_CONFIGURATION_CST |
-			EQOS_MAC_CONFIGURATION_ACS;
-
-
     /* PLSEN is set to 1 so that LPI is not initiated */
     // MAC_LPS_PLSEN_WR(1); << this macro below
-    // uint32_t v = eqos->mac_regs->unused_0ac[9];
-    // v = (v & (MAC_LPS_RES_WR_MASK_20)) | (((0) & (MAC_LPS_MASK_20)) << 20);
-    // v = (v & (MAC_LPS_RES_WR_MASK_10)) | (((0) & (MAC_LPS_MASK_10)) << 10);
-    // v = (v & (MAC_LPS_RES_WR_MASK_4)) | (((0) & (MAC_LPS_MASK_4)) << 4);
-    // v = ((v & MAC_LPS_PLSEN_WR_MASK) | ((1 & MAC_LPS_PLSEN_MASK) << 18));
-    // eqos->mac_regs->unused_0ac[9] = v;
+    uint32_t v = eqos->mac_regs->unused_0ac[9];
+    v = (v & (MAC_LPS_RES_WR_MASK_20)) | (((0) & (MAC_LPS_MASK_20)) << 20);
+    v = (v & (MAC_LPS_RES_WR_MASK_10)) | (((0) & (MAC_LPS_MASK_10)) << 10);
+    v = (v & (MAC_LPS_RES_WR_MASK_4)) | (((0) & (MAC_LPS_MASK_4)) << 4);
+    v = ((v & MAC_LPS_PLSEN_WR_MASK) | ((1 & MAC_LPS_PLSEN_MASK) << 18));
+    eqos->mac_regs->unused_0ac[9] = v;
+
+
+    // /* Update the MAC address */
+    // memcpy(eqos->enetaddr, TX2_DEFAULT_MAC, 6);
+    // uint32_t val1 = (eqos->enetaddr[5] << 8) | (eqos->enetaddr[4]);
+    // eqos->mac_regs->address0_high = val1;
+    // val1 = (eqos->enetaddr[3] << 24) | (eqos->enetaddr[2] << 16) |
+    //        (eqos->enetaddr[1] << 8) | (eqos->enetaddr[0]);
+    // eqos->mac_regs->address0_low = val1;
+
 
     sel4cp_dbg_puts("Orig MAC: ");
     dump_mac(mac);
@@ -971,9 +969,8 @@ int eqos_start(struct eqos_priv *eqos)
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
 
-
-    // eqos->mac_regs->configuration &= 0xffcfff7c;
-    // eqos->mac_regs->configuration |=  DWCEQOS_MAC_CFG_TE | DWCEQOS_MAC_CFG_RE;
+    eqos->mac_regs->configuration &= 0xffcfff7c;
+    eqos->mac_regs->configuration |=  DWCEQOS_MAC_CFG_TE | DWCEQOS_MAC_CFG_RE;
 
     /* Configure DMA */
     /* Enable OSP mode */
@@ -1010,7 +1007,6 @@ int eqos_start(struct eqos_priv *eqos)
           EQOS_DMA_SYSBUS_MODE_BLEN8;
     eqos->dma_regs->sysbus_mode = val;
 
-
     eqos->dma_regs->ch0_txdesc_list_haddress = 0;
     eqos->dma_regs->ch0_txdesc_list_address = hw_ring_buffer_paddr + (sizeof(struct eqos_desc) * RX_COUNT);
     eqos->dma_regs->ch0_txdesc_ring_length = TX_COUNT - 1;
@@ -1018,37 +1014,33 @@ int eqos_start(struct eqos_priv *eqos)
     eqos->dma_regs->ch0_rxdesc_list_haddress = 0;
     eqos->dma_regs->ch0_rxdesc_list_address = hw_ring_buffer_paddr;
     eqos->dma_regs->ch0_rxdesc_ring_length = RX_COUNT - 1;
-    
-    print("init: ch dma ie = ");
-    puthex64(eqos->dma_regs->ch0_dma_ie);
-    print("\n");    
+  
     
     eqos->dma_regs->ch0_dma_ie = 0;
-
-    print("init: ch dma ie = ");
-    puthex64(eqos->dma_regs->ch0_dma_ie);
-    print("\n");    
-
     eqos->dma_regs->ch0_dma_ie = DWCEQOS_DMA_CH0_IE_RIE | DWCEQOS_DMA_CH0_IE_TIE |
                                  DWCEQOS_DMA_CH0_IE_NIE | DWCEQOS_DMA_CH0_IE_AIE |
                                  DWCEQOS_DMA_CH0_IE_FBEE | DWCEQOS_DMA_CH0_IE_RWTE;
-    
-    print("init: ch dma ie = ");
-    puthex64(eqos->dma_regs->ch0_dma_ie);
-    print("\n");    
-
     eqos->dma_regs->ch0_dma_rx_int_wd_timer = 120;
     udelay(100);
 
-    eqos->dma_regs->ch0_tx_control |= EQOS_DMA_CH0_TX_CONTROL_ST;
-    eqos->dma_regs->ch0_rx_control |= EQOS_DMA_CH0_RX_CONTROL_SR;
-    eqos->mac_regs->configuration |= EQOS_MAC_CONFIGURATION_TE | EQOS_MAC_CONFIGURATION_RE;
-    // last_rx_desc = (eqos->rx->phys + ((EQOS_DESCRIPTORS_RX) * (uintptr_t)(sizeof(struct eqos_desc))));
-    // last_tx_desc = (tx.phys + ((EQOS_DESCRIPTORS_TX) * (uintptr_t)(sizeof(struct eqos_desc))));
+    eqos->dma_regs->ch0_tx_control = EQOS_DMA_CH0_TX_CONTROL_ST;
+    eqos->dma_regs->ch0_rx_control = EQOS_DMA_CH0_RX_CONTROL_SR;
+
+    // eqos->last_rx_desc = (d->rx_ring_phys + ((EQOS_DESCRIPTORS_RX) * (uintptr_t)(sizeof(struct eqos_desc))));
+    // eqos->last_tx_desc = (d->tx_ring_phys + ((EQOS_DESCRIPTORS_TX) * (uintptr_t)(sizeof(struct eqos_desc))));
 
     /* Disable MMC event counters */
     *(uint32_t *)(eqos->regs + REG_DWCEQOS_ETH_MMC_CONTROL) |= REG_DWCEQOS_MMC_CNTFREEZ;
 
+    // eqos->dma_regs->ch0_tx_control |= EQOS_DMA_CH0_TX_CONTROL_ST;
+    // eqos->dma_regs->ch0_rx_control |= EQOS_DMA_CH0_RX_CONTROL_SR;
+    // eqos->mac_regs->configuration |= EQOS_MAC_CONFIGURATION_TE | EQOS_MAC_CONFIGURATION_RE;
+    // // last_rx_desc = (eqos->rx->phys + ((EQOS_DESCRIPTORS_RX) * (uintptr_t)(sizeof(struct eqos_desc))));
+    // // last_tx_desc = (tx.phys + ((EQOS_DESCRIPTORS_TX) * (uintptr_t)(sizeof(struct eqos_desc))));
+
+    // /* Disable MMC event counters */
+    // *(uint32_t *)(eqos->regs + REG_DWCEQOS_ETH_MMC_CONTROL) |= REG_DWCEQOS_MMC_CNTFREEZ;
+    return 0;
 }
 
 static int tx2_initialise_hardware(struct eqos_priv *eqos)
@@ -1086,7 +1078,6 @@ static int tx2_initialise_hardware(struct eqos_priv *eqos)
     return 0;
 }
 
-
 void *tx2_initialise(struct eqos_priv *eqos,uintptr_t base_addr)
 {
     print("|tx2_initialise| called\n");
@@ -1101,6 +1092,7 @@ void *tx2_initialise(struct eqos_priv *eqos,uintptr_t base_addr)
     if (ret != 0) {
         print("failed to initialise phy");
     }
+
 
     ret = tx2_initialise_hardware(eqos);
     if (ret < 0) {
@@ -1141,7 +1133,6 @@ void *tx2_initialise(struct eqos_priv *eqos,uintptr_t base_addr)
     eqos->mii->read = eqos_mdio_read;
     eqos->mii->write = eqos_mdio_write;
     eqos->mii->priv = eqos;
-
     strcpy(eqos->mii->name, "mii\0");
 
     ret = mdio_register(eqos->mii);

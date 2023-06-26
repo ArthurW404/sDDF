@@ -320,7 +320,6 @@ int gpio_sys_init(gpio_sys_t *gpio_sys)
     // puthex64(&tx2_gpio_init);
     // print("\n");
 
-
     gpio_sys->set_level = &tx2_gpio_set_level;
     gpio_sys->read_level = &tx2_gpio_read_level;
     gpio_sys->pending_status = &tx2_gpio_pending_status;

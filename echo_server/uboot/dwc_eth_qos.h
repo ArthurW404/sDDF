@@ -30,23 +30,18 @@
  *    all clock and reset signals to the HW block.
  */
 
+#pragma once
+
+#include "eth.h"
 #include "miiphy.h"
 #include "net.h"
 #include "phy.h"
 
 #include "wait_bit.h"
 
-#include <platsupport/clock.h>
-#include <platsupport/io.h>
-#include <platsupportports/plat/gpio.h>
-#include <platsupport/gpio.h>
-#include <platsupport/reset.h>
-
-#include "../tx2.h"
 #include "tx2_configs.h"
 
 #include <string.h>
-#include <ethdrivers/helpers.h>
 #define EQOS_MAC_REGS_BASE 0x000
 struct eqos_mac_regs {
     uint32_t configuration;             /* 0x000 */
@@ -250,15 +245,20 @@ struct eqos_priv {
     struct clock *clk_slave_bus;
     struct mii_dev *mii;
     struct phy_device *phy;
-    uintptr_t last_rx_desc;
-    uintptr_t last_tx_desc;
-    unsigned char enetaddr[ARP_HLEN];
-    bool reg_access_ok;
-    ps_io_ops_t *tx2_io_ops;
+    // uintptr_t last_rx_desc;
+    // uintptr_t last_tx_desc;
+    // unsigned char enetaddr[ARP_HLEN];
+    // bool reg_access_ok;
+    // ps_io_ops_t *tx2_io_ops;
     gpio_sys_t *gpio_sys;
     gpio_t gpio;
     reset_sys_t *reset_sys;
     clock_sys_t *clock_sys;
+
+
+    // sddf attributes
+    ring_ctx_t *rx;
+    ring_ctx_t *tx;
 };
 
 #define REG_DWCEQOS_ETH_MMC_CONTROL      0x0700

@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "eth.h"
+#include "dwc_eth_qos.h"
 #include "shared_ringbuffer.h"
 #include "util.h"
 #include "clock.h"
@@ -56,15 +57,6 @@ volatile struct eqos_mac_regs *eth_mac = (void *)(0x2000000 + EQOS_MAC_REGS_BASE
 // struct for eqos registers and device metadata
 struct eqos_priv eqos_dev;
 struct eqos_priv *eqos = &eqos_dev;
-
-
-static const struct eqos_config eqos_tegra186_config = {
-    .reg_access_always_ok = false,
-    .mdio_wait = 10,
-    .swr_wait = 10,
-    .config_mac = EQOS_MAC_RXQ_CTRL0_RXQ0EN_ENABLED_DCB,
-    .config_mac_mdio = EQOS_MAC_MDIO_ADDRESS_CR_20_35,
-};
 
 static void update_ring_slot(
     ring_ctx_t *ring,
@@ -313,10 +305,63 @@ raw_tx(struct eqos_priv *eqos, unsigned int num, uintptr_t *phys,
 
 }
 
+
+static void complete_rx(struct eqos_priv *eqos)
+{
+    // struct tx2_eth_data *dev = (struct tx2_eth_data *)eth_driver->eth_data;
+    
+    // unsigned int num_in_ring = dev->rx_size - dev->rx_remain;
+
+    // for (int i = 0; i < num_in_ring; i++) {
+    //     unsigned int status = dev->rx_ring[dev->rdh].des3;
+
+    //     /* Ensure no memory references get ordered before we checked the descriptor was written back */
+    //     __sync_synchronize();
+    //     if (status & EQOS_DESC3_OWN) {
+    //         /* not complete yet */
+    //         break;
+    //     }
+
+    //     /* TBD: Need to handle multiple buffers for single frame? */
+    //     void *cookie = dev->rx_cookies[dev->rdh];
+    //     dev->rx_cookies[dev->rdh] = 0;
+    //     unsigned int len = status & 0x7fff;
+
+    //     dev->rx_remain++;
+    //     /* update rdh */
+    //     dev->rdh = (dev->rdh + 1) % dev->rx_size;
+
+    //     /* Give the buffers back */
+    //     eth_driver->i_cb.rx_complete(eth_driver->cb_cookie, 1, &cookie, &len);
+    // }
+}
+
+
 static void 
 handle_eth(struct eqos_priv *eqos)
 {
-  
+    // uint32_t val = eqos_handle_irq(eqos, irq);
+
+    // if (val & TX_IRQ) {
+    //     eqos_dma_disable_txirq(eth_data);
+    //     complete_tx(driver);
+    //     eqos_dma_enable_txirq(eth_data);
+    // }
+
+    // if (val & RX_IRQ) {
+    //     eqos_dma_disable_rxirq(eth_data);
+    //     complete_rx(driver);
+    //     fill_rx_bufs(driver);
+    //     /*
+    //      * RX IRQ is was disabled when checking the IRQ, and thus need to be
+    //      * re-enabled
+    //      */
+    //     eqos_dma_enable_rxirq(eth_data);
+    // }
+
+    // if (val == 0) {
+    //     ZF_LOGD("No TX or RX IRQ, ignoring this interrupt");
+    // }  
 }
 
 static void handle_tx(struct eqos_priv *eqos)
@@ -396,11 +441,11 @@ void init_post()
 
     eqos_start(eqos);
 
-    /* enable events */
-    eqos_dma_enable_rxirq(eqos);
+    // /* enable events */
+    // eqos_dma_enable_rxirq(eqos);
 
-    // do we need tx?
-    eqos_dma_enable_txirq(eqos);
+    // // do we need tx?
+    // eqos_dma_enable_txirq(eqos);
 
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");
@@ -464,7 +509,14 @@ void notified(sel4cp_channel ch)
             handle_tx(eqos);            
             sel4cp_dbg_puts("===> After: In notified send\n");
             break;
+        case 0x11:
+            eqos_handle_irq(eqos, 0x11);
+            have_signal = true;
+            signal_msg = seL4_MessageInfo_new(IRQAckIRQ, 0, 0, 0);
+            // signal = (BASE_IRQ_CAP + 0x11);
+            break;
         default:
+            
             sel4cp_dbg_puts("eth driver: received notification on unexpected channel\n");
             print("ch =");
             puthex64(ch);

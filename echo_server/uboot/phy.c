@@ -643,6 +643,8 @@ static struct phy_driver *get_phy_driver(struct phy_device *phydev,
         }
     }
 
+    print("|get_phy_driver| using generic interface\n");
+
     /* If we made it here, there's no driver for this PHY */
     return generic_for_interface(interface);
 }
