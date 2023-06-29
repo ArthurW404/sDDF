@@ -90,6 +90,17 @@
         <irq irq="56" id="23" />
         <irq irq="133" id="22" />
         <irq irq="101" id="24" />
+        
+        <irq irq="47" id="25" />
+        <irq irq="79" id="26" />
+        <irq irq="50" id="27" />
+        <irq irq="82" id="28" />
+        <irq irq="53" id="29" />
+        <!-- <irq irq="56" id="30" /> -->
+        <irq irq="59" id="31" />
+        <irq irq="91" id="32" />
+        <irq irq="180" id="33" />
+        <irq irq="212" id="34" />
 
         <!-- <irq irq="152" id="1" /> -->
 

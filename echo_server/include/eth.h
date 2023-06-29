@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <sel4cp.h>
 #include <sel4/sel4.h>
+
 #include <string.h>
 
 #include "clock.h"
@@ -47,8 +48,40 @@ typedef struct {
     void **cookies;
 } ring_ctx_t;
 
-#include "dwc_eth_qos.h"
+struct eqos_mac_regs;
+struct eqos_mtl_regs;
+struct eqos_dma_regs;
+struct eqos_tegra186_regs;
 
+struct eqos_priv {
+    const struct eqos_config *config;
+    uintptr_t regs;
+    struct eqos_mac_regs *mac_regs;
+    struct eqos_mtl_regs *mtl_regs;
+    struct eqos_dma_regs *dma_regs;
+    struct eqos_tegra186_regs *tegra186_regs;
+    struct clock *clk_master_bus;
+    struct clock *clk_rx;
+    struct clock *clk_ptp_ref;
+    struct clock *clk_tx;
+    struct clock *clk_slave_bus;
+    struct mii_dev *mii;
+    struct phy_device *phy;
+    // uintptr_t last_rx_desc;
+    // uintptr_t last_tx_desc;
+    // unsigned char enetaddr[ARP_HLEN];
+    // bool reg_access_ok;
+    // ps_io_ops_t *tx2_io_ops;
+    gpio_sys_t *gpio_sys;
+    gpio_t gpio;
+    reset_sys_t *reset_sys;
+    clock_sys_t *clock_sys;
+
+
+    // sddf attributes
+    ring_ctx_t *rx;
+    ring_ctx_t *tx;
+};
 /* descriptor flags */
 #define EQOS_DESC2_IOC      BIT(31)
 #define EQOS_DESC3_OWN      BIT(31)
@@ -98,56 +131,8 @@ void *tx2_initialise(struct eqos_priv *eqos, uintptr_t base_addr);
 
 void eqos_set_rx_tail_pointer(struct eqos_priv *eqos);
 
-static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
-{
-    //default one: 00:04:4b:c5:67:70
-    // __sync_synchronize();
-    // memcpy(mac, TX2_DEFAULT_MAC, 6);
-    uint32_t l, h;
-    // l = eth_mac->address0_low;
-    // h = eth_mac->address0_high;
-    l = eqos->mac_regs->address0_low;
-    h = eqos->mac_regs->address0_high;
-    
-    mac[0] = l >> 24;
-    mac[1] = l >> 16 & 0xff;
-    mac[2] = l >> 8 & 0xff;
-    mac[3] = l & 0xff;
-    mac[4] = h >> 24;
-    mac[5] = h >> 16 & 0xff;
-}
 
 /* MAC HW ADDR regs */
 // from linux dwmac4.h
 #define GMAC_HI_REG_AE			BIT(31)
 
-
-static void set_mac(struct eqos_priv *eqos, uint8_t *mac)
-{
-    // using tx2a mac address since
-    unsigned char enetaddr[ARP_HLEN];
-    memcpy(enetaddr, TX2_DEFAULT_MAC, 6);
-    uint32_t val1 = (enetaddr[5] << 8) | (enetaddr[4]);
-
-    /* For MAC Addr registers se have to set the Address Enaeqos_handle_irqle (AE)
-	 * bit that has no effect on the High Reg 0 where the bit 31 (MO)
-	 * is RO.
-	 */
-    eqos->mac_regs->address0_high = val1  | GMAC_HI_REG_AE;
-    val1 = (enetaddr[3] << 24) | (enetaddr[2] << 16) |
-           (enetaddr[1] << 8) | (enetaddr[0]);
-
-    eqos->mac_regs->address0_low = val1;
-}
-
-static void
-dump_mac(uint8_t *mac)
-{
-    for (unsigned i = 0; i < 6; i++) {
-        sel4cp_dbg_putc(hexchar((mac[i] >> 4) & 0xf));
-        sel4cp_dbg_putc(hexchar(mac[i] & 0xf));
-        if (i < 5) {
-            sel4cp_dbg_putc(':');
-        }
-    }
-}

@@ -32,10 +32,13 @@
 
 #pragma once
 
-#include "eth.h"
 #include "miiphy.h"
 #include "net.h"
 #include "phy.h"
+#include "gpio.h"
+#include "reset.h"
+#include "clock.h"
+#include "eth.h"
 
 #include "wait_bit.h"
 
@@ -231,35 +234,6 @@ struct eqos_config {
 /* ARP hardware address length */
 #define ARP_HLEN 6
 
-struct eqos_priv {
-    const struct eqos_config *config;
-    uintptr_t regs;
-    struct eqos_mac_regs *mac_regs;
-    struct eqos_mtl_regs *mtl_regs;
-    struct eqos_dma_regs *dma_regs;
-    struct eqos_tegra186_regs *tegra186_regs;
-    struct clock *clk_master_bus;
-    struct clock *clk_rx;
-    struct clock *clk_ptp_ref;
-    struct clock *clk_tx;
-    struct clock *clk_slave_bus;
-    struct mii_dev *mii;
-    struct phy_device *phy;
-    // uintptr_t last_rx_desc;
-    // uintptr_t last_tx_desc;
-    // unsigned char enetaddr[ARP_HLEN];
-    // bool reg_access_ok;
-    // ps_io_ops_t *tx2_io_ops;
-    gpio_sys_t *gpio_sys;
-    gpio_t gpio;
-    reset_sys_t *reset_sys;
-    clock_sys_t *clock_sys;
-
-
-    // sddf attributes
-    ring_ctx_t *rx;
-    ring_ctx_t *tx;
-};
 
 #define REG_DWCEQOS_ETH_MMC_CONTROL      0x0700
 #define REG_DWCEQOS_MMC_CNTFREEZ         BIT(3)

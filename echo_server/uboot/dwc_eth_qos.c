@@ -39,6 +39,10 @@
 #include "dwc_eth_qos.h"
 #include "tx2_configs.h"
 #include "util.h"
+#include "eth.h"
+#include "reset.h"
+#include "clock.h"
+#include "gpio.h"
 
 #include <string.h>
 // #include "dwc_eth_qos.h"
@@ -60,6 +64,54 @@ static clk_t clk_tx = {0};
 
 static uint8_t mac[6];
 
+static void set_mac(struct eqos_priv *eqos, uint8_t *mac)
+{
+    // using tx2a mac address since
+    unsigned char enetaddr[ARP_HLEN];
+    memcpy(enetaddr, TX2_DEFAULT_MAC, 6);
+    uint32_t val1 = (enetaddr[5] << 8) | (enetaddr[4]);
+
+    /* For MAC Addr registers se have to set the Address Enaeqos_handle_irqle (AE)
+	 * bit that has no effect on the High Reg 0 where the bit 31 (MO)
+	 * is RO.
+	 */
+    eqos->mac_regs->address0_high = val1  | GMAC_HI_REG_AE;
+    val1 = (enetaddr[3] << 24) | (enetaddr[2] << 16) |
+           (enetaddr[1] << 8) | (enetaddr[0]);
+
+    eqos->mac_regs->address0_low = val1;
+}
+
+static void
+dump_mac(uint8_t *mac)
+{
+    for (unsigned i = 0; i < 6; i++) {
+        sel4cp_dbg_putc(hexchar((mac[i] >> 4) & 0xf));
+        sel4cp_dbg_putc(hexchar(mac[i] & 0xf));
+        if (i < 5) {
+            sel4cp_dbg_putc(':');
+        }
+    }
+}
+
+static void get_mac_addr(struct eqos_priv *eqos, uint8_t *mac)
+{
+    //default one: 00:04:4b:c5:67:70
+    // __sync_synchronize();
+    // memcpy(mac, TX2_DEFAULT_MAC, 6);
+    uint32_t l, h;
+    // l = eth_mac->address0_low;
+    // h = eth_mac->address0_high;
+    l = eqos->mac_regs->address0_low;
+    h = eqos->mac_regs->address0_high;
+    
+    mac[0] = l >> 24;
+    mac[1] = l >> 16 & 0xff;
+    mac[2] = l >> 8 & 0xff;
+    mac[3] = l & 0xff;
+    mac[4] = h >> 24;
+    mac[5] = h >> 16 & 0xff;
+}
 void eqos_dma_disable_rxirq(struct eqos_priv *eqos)
 {
     uint32_t regval;
@@ -679,7 +731,6 @@ static int eqos_start_resets_tegra186(struct eqos_priv *eqos)
         print("reset_deassert() failed: %d\n");
         return ret;
     }
-
     return 0;
 }
 
@@ -794,13 +845,6 @@ int eqos_start(struct eqos_priv *eqos)
     dump_mac(mac);
     sel4cp_dbg_puts("\n");
 
-    ret = eqos_start_resets_tegra186(eqos);
-    if (ret) {
-        sel4cp_dbg_puts("eqos_start_resets_tegra186 failed");
-        // goto err_stop_clks;
-        return -1;
-    }
-
     udelay(10);
 
     ret = wait_for_bit_le32(&eqos->dma_regs->mode,
@@ -812,7 +856,6 @@ int eqos_start(struct eqos_priv *eqos)
     print("dma_status: ");
     puthex64(*dma_status);
     print("\n");
-
 
     // TX2 eqos device setup
     // ==== 

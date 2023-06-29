@@ -11,6 +11,7 @@ typedef struct gpio_sys gpio_sys_t;
 typedef int gpio_id_t;
 
 #include <stdbool.h>
+#include <errno.h>
 // #include <utils/util.h>
 // #include <platsupport/io.h>
 
