@@ -356,6 +356,24 @@ void init(void)
 
     gpt_init();
 
+    u32_t now = sys_now();
+
+    for (int i = 0; i < 1000; ++i) {}
+    u32_t after = sys_now();
+
+    print("now =");
+    puthex64(now);
+    print("\n");
+    
+    
+    print("after =");
+    puthex64(after);
+    print("\n");
+
+    print("Sys diff after gpt_init =");
+    puthex64(after - now);
+    print("\n");
+
     LWIP_MEMPOOL_INIT(RX_POOL);
 
     get_mac();
