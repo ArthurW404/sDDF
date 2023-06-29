@@ -49,7 +49,8 @@ CFLAGS += -I$(BOARD_DIR)/include \
 	-I$(LWIPDIR)/include \
 	-I$(LWIPDIR)/include/ipv4 \
 	-I$(RINGBUFFERDIR)/include \
-	-I$(BENCHDIR)/include 
+	-I$(BENCHDIR)/include  \
+	-Iuboot
 
 # COREFILES, CORE4FILES: The minimum set of files needed for lwIP.
 COREFILES=$(LWIPDIR)/core/init.c \
@@ -89,7 +90,9 @@ NETIFFILES=$(LWIPDIR)/netif/ethernet.c
 LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES)
 LWIP_OBJS := $(LWIPFILES:.c=.o) lwip.o libsharedringbuffer/shared_ringbuffer.o utilization_socket.o udp_echo_socket.o timer.o
 
-ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o
+UBOOT_OBJS := uboot/miiphyutil.o uboot/marvell.o uboot/phy.o uboot/zynq_gem.o  util.o 
+
+ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o $(UBOOT_OBJS)
 BENCH_OBJS := benchmark/benchmark.o
 IDLE_OBJS := benchmark/idle.o
 
@@ -129,6 +132,7 @@ directories:
 	$(info $(shell mkdir -p $(BUILD_DIR)/lwip/src/netif))	\
     $(info $(shell mkdir -p $(BUILD_DIR)/libsharedringbuffer))	\
 	$(info $(shell mkdir -p $(BUILD_DIR)/benchmark))	\
+	$(info $(shell mkdir -p $(BUILD_DIR)/uboot))	\
 
 clean:
 	rm -f *.o *.elf .depend*

@@ -17,6 +17,7 @@ static volatile uint32_t *gpt;
 
 static uint32_t overflow_count;
 
+
 #define CR 0
 #define PR 1
 #define SR 2
@@ -79,24 +80,24 @@ void irq(sel4cp_channel ch)
 
 void gpt_init(void)
 {
-    gpt = (volatile uint32_t *) gpt_regs;
+    // gpt = (volatile uint32_t *) gpt_regs;
 
-        uint32_t cr = (
-        (1 << 9) | // Free run mode
-        (1 << 6) | // Peripheral clocks
-        (1) // Enable
-    );
+    //     uint32_t cr = (
+    //     (1 << 9) | // Free run mode
+    //     (1 << 6) | // Peripheral clocks
+    //     (1) // Enable
+    // );
 
-    gpt[CR] = cr;
+    // gpt[CR] = cr;
 
-    gpt[IR] = ( 
-        (1 << 5) // rollover interrupt
-    );
+    // gpt[IR] = ( 
+    //     (1 << 5) // rollover interrupt
+    // );
 
-    // set a timer! 
-    uint64_t abs_timeout = get_ticks() + (LWIP_TICK_MS * NS_IN_MS);
-    gpt[OCR1] = abs_timeout;
-    gpt[IR] |= 1;
+    // // set a timer! 
+    // uint64_t abs_timeout = get_ticks() + (LWIP_TICK_MS * NS_IN_MS);
+    // gpt[OCR1] = abs_timeout;
+    // gpt[IR] |= 1;
 
-    timers_initialised = 1;
+    // timers_initialised = 1;
 }

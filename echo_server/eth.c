@@ -10,6 +10,10 @@
 #include "eth.h"
 #include "shared_ringbuffer.h"
 #include "util.h"
+#include "io.h"
+
+#include "miiphy.h"
+#include "zynq_gem.h"
 
 #define IRQ_CH 1
 #define TX_CH  2
@@ -35,24 +39,20 @@ uintptr_t uart_base;
 #define PACKET_BUFFER_SIZE  2048
 #define MAX_PACKET_SIZE     1536
 
-#define RX_COUNT 256
-#define TX_COUNT 256
+#define RX_COUNT 128
+#define TX_COUNT 128
+// #define RX_COUNT 256
+// #define TX_COUNT 256
 
 _Static_assert((512 * 2) * PACKET_BUFFER_SIZE <= 0x200000, "Expect rx+tx buffers to fit in single 2MB page");
 _Static_assert(sizeof(ring_buffer_t) <= 0x200000, "Expect ring buffer ring to fit in single 2MB page");
-
-struct descriptor {
-    uint16_t len;
-    uint16_t stat;
-    uint32_t addr;
-};
 
 typedef struct {
     unsigned int cnt;
     unsigned int remain;
     unsigned int tail;
     unsigned int head;
-    volatile struct descriptor *descr;
+    volatile struct emac_bd *descr;
     uintptr_t phys;
     void **cookies;
 } ring_ctx_t;
@@ -67,26 +67,27 @@ ring_handle_t tx_ring;
 
 static uint8_t mac[6];
 
-volatile struct enet_regs *eth = (void *)(uintptr_t)0x2000000;
+volatile struct zynq_gem_regs *eth = (void *)(uintptr_t)0x2000000;
 
-static void get_mac_addr(volatile struct enet_regs *reg, uint8_t *mac)
+static void get_mac_addr(volatile struct zynq_gem_regs *reg, uint8_t *mac)
 {
-    uint32_t l, h;
-    l = reg->palr;
-    h = reg->paur;
+    /* fill enetaddr */
+    u32 maclow = readl(&reg->laddr[0][LADDR_LOW]);
+    u32 machigh = readl(&reg->laddr[0][LADDR_HIGH]);
 
-    mac[0] = l >> 24;
-    mac[1] = l >> 16 & 0xff;
-    mac[2] = l >> 8 & 0xff;
-    mac[3] = l & 0xff;
-    mac[4] = h >> 24;
-    mac[5] = h >> 16 & 0xff;
+    mac[0] = maclow;
+    mac[1] = maclow >> 8;
+    mac[2] = maclow >> 16;
+    mac[3] = maclow >> 24;
+
+    mac[4] = machigh;
+    mac[5] = machigh >> 8;
 }
 
-static void set_mac(volatile struct enet_regs *reg, uint8_t *mac)
+static void set_mac(volatile struct zynq_gem_regs *reg, uint8_t *mac)
 {
-    reg->palr = (mac[0] << 24) | (mac[1] << 16) | (mac[2] << 8) | (mac[3]);
-    reg->paur = (mac[4] << 24) | (mac[5] << 16);
+    // reg->palr = (mac[0] << 24) | (mac[1] << 16) | (mac[2] << 8) | (mac[3]);
+    // reg->paur = (mac[4] << 24) | (mac[5] << 16);
 }
 
 static void
@@ -123,22 +124,22 @@ static void update_ring_slot(
     uint16_t len,
     uint16_t stat)
 {
-    volatile struct descriptor *d = &(ring->descr[idx]);
-    d->addr = phys;
-    d->len = len;
+    // volatile struct emac_bd *d = &(ring->descr[idx]);
+    // d->addr = phys;
+    // d->len = len;
 
-    /* Ensure all writes to the descriptor complete, before we set the flags
-     * that makes hardware aware of this slot.
-     */
-    __sync_synchronize();
+    // /* Ensure all writes to the descriptor complete, before we set the flags
+    //  * that makes hardware aware of this slot.
+    //  */
+    // __sync_synchronize();
 
-    d->stat = stat;
+    // d->stat = stat;
 }
 
 static inline void
-enable_irqs(volatile struct enet_regs *eth, uint32_t mask)
+enable_irqs(volatile struct zynq_gem_regs *eth, uint32_t mask)
 {
-    eth->eimr = mask;
+    // eth->eimr = mask;
 }
 
 static uintptr_t 
@@ -160,130 +161,130 @@ alloc_rx_buf(size_t buf_size, void **cookie)
 
 static void fill_rx_bufs()
 {
-    ring_ctx_t *ring = &rx;
-    __sync_synchronize();
-    while (ring->remain > 0) {
-        /* request a buffer */
-        void *cookie = NULL;
-        uintptr_t phys = alloc_rx_buf(MAX_PACKET_SIZE, &cookie);
-        if (!phys) {
-            break;
-        }
-        uint16_t stat = RXD_EMPTY;
-        int idx = ring->tail;
-        int new_tail = idx + 1;
-        if (new_tail == ring->cnt) {
-            new_tail = 0;
-            stat |= WRAP;
-        }
-        ring->cookies[idx] = cookie;
-        update_ring_slot(ring, idx, phys, 0, stat);
-        ring->tail = new_tail;
-        /* There is a race condition if add/remove is not synchronized. */
-        ring->remain--;
-    }
-    __sync_synchronize();
+    // ring_ctx_t *ring = &rx;
+    // __sync_synchronize();
+    // while (ring->remain > 0) {
+    //     /* request a buffer */
+    //     void *cookie = NULL;
+    //     uintptr_t phys = alloc_rx_buf(MAX_PACKET_SIZE, &cookie);
+    //     if (!phys) {
+    //         break;
+    //     }
+    //     uint16_t stat = RXD_EMPTY;
+    //     int idx = ring->tail;
+    //     int new_tail = idx + 1;
+    //     if (new_tail == ring->cnt) {
+    //         new_tail = 0;
+    //         stat |= WRAP;
+    //     }
+    //     ring->cookies[idx] = cookie;
+    //     update_ring_slot(ring, idx, phys, 0, stat);
+    //     ring->tail = new_tail;
+    //     /* There is a race condition if add/remove is not synchronized. */
+    //     ring->remain--;
+    // }
+    // __sync_synchronize();
 
-    if (ring->tail != ring->head) {
-        /* Make sure rx is enabled */
-        eth->rdar = RDAR_RDAR;
-    }
+    // if (ring->tail != ring->head) {
+    //     /* Make sure rx is enabled */
+    //     eth->rdar = RDAR_RDAR;
+    // }
 }
 
 static void
-handle_rx(volatile struct enet_regs *eth)
+handle_rx(volatile struct zynq_gem_regs *eth)
 {
-    ring_ctx_t *ring = &rx;
-    unsigned int head = ring->head;
+//     ring_ctx_t *ring = &rx;
+//     unsigned int head = ring->head;
 
-    int num = 1;
-    int was_empty = ring_empty(rx_ring.used_ring);
+//     int num = 1;
+//     int was_empty = ring_empty(rx_ring.used_ring);
 
-    // we don't want to dequeue packets if we have nothing to replace it with
-    while (head != ring->tail && (ring_size(rx_ring.free_ring) > num)) {
-        volatile struct descriptor *d = &(ring->descr[head]);
+//     // we don't want to dequeue packets if we have nothing to replace it with
+//     while (head != ring->tail && (ring_size(rx_ring.free_ring) > num)) {
+//         volatile struct emac_bd *d = &(ring->descr[head]);
 
-        /* If the slot is still marked as empty we are done. */
-        if (d->stat & RXD_EMPTY) {
-            break;
-        }
+//         /* If the slot is still marked as empty we are done. */
+//         if (d->stat & RXD_EMPTY) {
+//             break;
+//         }
 
-        void *cookie = ring->cookies[head];
-        /* Go to next buffer, handle roll-over. */
-        if (++head == ring->cnt) {
-            head = 0;
-        }
-        ring->head = head;
+//         void *cookie = ring->cookies[head];
+//         /* Go to next buffer, handle roll-over. */
+//         if (++head == ring->cnt) {
+//             head = 0;
+//         }
+//         ring->head = head;
 
-        /* There is a race condition here if add/remove is not synchronized. */
-        ring->remain++;
+//         /* There is a race condition here if add/remove is not synchronized. */
+//         ring->remain++;
 
-        buff_desc_t *desc = (buff_desc_t *)cookie;
+//         buff_desc_t *desc = (buff_desc_t *)cookie;
 
-        enqueue_used(&rx_ring, desc->encoded_addr, d->len, desc->cookie);
-        num++;
-    }
+//         enqueue_used(&rx_ring, desc->encoded_addr, d->len, desc->cookie);
+//         num++;
+//     }
 
-    /* Notify client (only if we have actually processed a packet and 
-    the client hasn't already been notified!) */
-    if (num > 1 && was_empty) {
-        sel4cp_notify(RX_CH);
-    } 
+//     /* Notify client (only if we have actually processed a packet and 
+//     the client hasn't already been notified!) */
+//     if (num > 1 && was_empty) {
+//         sel4cp_notify(RX_CH);
+//     } 
 }
 
 static void
-complete_tx(volatile struct enet_regs *eth)
+complete_tx(volatile struct zynq_gem_regs *eth)
 {
-    unsigned int cnt_org;
-    void *cookie;
-    ring_ctx_t *ring = &tx;
-    unsigned int head = ring->head;
-    unsigned int cnt = 0;
+    // unsigned int cnt_org;
+    // void *cookie;
+    // ring_ctx_t *ring = &tx;
+    // unsigned int head = ring->head;
+    // unsigned int cnt = 0;
 
-    while (head != ring->tail) {
-        if (0 == cnt) {
-            cnt = tx_lengths[head];
-            if ((0 == cnt) || (cnt > TX_COUNT)) {
-                /* We are not supposed to read 0 here. */
-                print("complete_tx with cnt=0 or max");
-                return;
-            }
-            cnt_org = cnt;
-            cookie = ring->cookies[head];
-        }
+    // while (head != ring->tail) {
+    //     if (0 == cnt) {
+    //         cnt = tx_lengths[head];
+    //         if ((0 == cnt) || (cnt > TX_COUNT)) {
+    //             /* We are not supposed to read 0 here. */
+    //             print("complete_tx with cnt=0 or max");
+    //             return;
+    //         }
+    //         cnt_org = cnt;
+    //         cookie = ring->cookies[head];
+    //     }
 
-        volatile struct descriptor *d = &(ring->descr[head]);
+    //     volatile struct emac_bd *d = &(ring->descr[head]);
 
-        /* If this buffer was not sent, we can't release any buffer. */
-        if (d->stat & TXD_READY) {
-            /* give it another chance */
-            if (!(eth->tdar & TDAR_TDAR)) {
-                eth->tdar = TDAR_TDAR;
-            }
-            if (d->stat & TXD_READY) {
-                break;
-            }
-        }
+    //     /* If this buffer was not sent, we can't release any buffer. */
+    //     if (d->stat & TXD_READY) {
+    //         /* give it another chance */
+    //         if (!(eth->tdar & TDAR_TDAR)) {
+    //             eth->tdar = TDAR_TDAR;
+    //         }
+    //         if (d->stat & TXD_READY) {
+    //             break;
+    //         }
+    //     }
 
-        /* Go to next buffer, handle roll-over. */
-        if (++head == TX_COUNT) {
-            head = 0;
-        }
+    //     /* Go to next buffer, handle roll-over. */
+    //     if (++head == TX_COUNT) {
+    //         head = 0;
+    //     }
 
-        if (0 == --cnt) {
-            ring->head = head;
-            /* race condition if add/remove is not synchronized. */
-            ring->remain += cnt_org;
-            /* give the buffer back */
-            buff_desc_t *desc = (buff_desc_t *)cookie;
+    //     if (0 == --cnt) {
+    //         ring->head = head;
+    //         /* race condition if add/remove is not synchronized. */
+    //         ring->remain += cnt_org;
+    //         /* give the buffer back */
+    //         buff_desc_t *desc = (buff_desc_t *)cookie;
 
-            enqueue_free(&tx_ring, desc->encoded_addr, desc->len, desc->cookie);
-        }
-    }
+    //         enqueue_free(&tx_ring, desc->encoded_addr, desc->len, desc->cookie);
+    //     }
+    // }
 }
 
 static void
-raw_tx(volatile struct enet_regs *eth, unsigned int num, uintptr_t *phys,
+raw_tx(volatile struct zynq_gem_regs *eth, unsigned int num, uintptr_t *phys,
                   unsigned int *len, void *cookie)
 {
     ring_ctx_t *ring = &tx;
@@ -301,22 +302,31 @@ raw_tx(volatile struct enet_regs *eth, unsigned int num, uintptr_t *phys,
 
     __sync_synchronize();
 
+    uintptr_t txbase = ring->phys + (uintptr_t)(ring->tail * sizeof(struct emac_bd));
+    
     unsigned int tail = ring->tail;
     unsigned int tail_new = tail;
 
     unsigned int i = num;
     while (i-- > 0) {
-        uint16_t stat = TXD_READY;
-        if (0 == i) {
-            stat |= TXD_ADDCRC | TXD_LAST;
-        }
+        // uint16_t stat = TXD_READY;
+        // if (0 == i) {
+        //     stat |= TXD_ADDCRC | TXD_LAST;
+        // }
 
-        unsigned int idx = tail_new;
-        if (++tail_new == TX_COUNT) {
-            tail_new = 0;
-            stat |= WRAP;
+        // unsigned int idx = tail_new;
+        // if (++tail_new == TX_COUNT) {
+        //     tail_new = 0;
+        //     stat |= WRAP;
+        // }
+        // update_ring_slot(ring, idx, *phys++, *len++, stat);
+        unsigned int ring = (tx.tail + i) % tx.cnt;
+        tx.descr[ring].addr = phys[i];
+        tx.descr[ring].status &= ~(ZYNQ_GEM_TXBUF_USED_MASK | ZYNQ_GEM_TXBUF_FRMLEN_MASK | ZYNQ_GEM_TXBUF_LAST_MASK);
+        tx.descr[ring].status |= (len[i] & ZYNQ_GEM_TXBUF_FRMLEN_MASK);
+        if (i == (num - 1)) {
+            tx.descr[ring].status |= ZYNQ_GEM_TXBUF_LAST_MASK;
         }
-        update_ring_slot(ring, idx, *phys++, *len++, stat);
     }
 
     ring->cookies[tail] = cookie;
@@ -327,38 +337,39 @@ raw_tx(volatile struct enet_regs *eth, unsigned int num, uintptr_t *phys,
 
     __sync_synchronize();
 
-    if (!(eth->tdar & TDAR_TDAR)) {
-        eth->tdar = TDAR_TDAR;
-    }
-
+    // if (!(eth->tdar & TDAR_TDAR)) {
+    //     eth->tdar = TDAR_TDAR;
+    // }
+    zynq_gem_start_send(eth, txbase);
+    print("Finished sending\n");
 }
 
 static void 
-handle_eth(volatile struct enet_regs *eth)
+handle_eth(volatile struct zynq_gem_regs *eth)
 {
-    uint32_t e = eth->eir & IRQ_MASK;
-    /* write to clear events */
-    eth->eir = e;
+    // uint32_t e = eth->eir & IRQ_MASK;
+    // /* write to clear events */
+    // eth->eir = e;
 
-    while (e & IRQ_MASK) {
-        if (e & NETIRQ_TXF) {
-            complete_tx(eth);
-        }
-        if (e & NETIRQ_RXF) {
-            handle_rx(eth);
-            fill_rx_bufs(eth);
-        }
-        if (e & NETIRQ_EBERR) {
-            print("Error: System bus/uDMA");
-            while (1);
-        }
-        e = eth->eir & IRQ_MASK;
-        eth->eir = e;
-    }
+    // while (e & IRQ_MASK) {
+    //     if (e & NETIRQ_TXF) {
+    //         complete_tx(eth);
+    //     }
+    //     if (e & NETIRQ_RXF) {
+    //         handle_rx(eth);
+    //         fill_rx_bufs(eth);
+    //     }
+    //     if (e & NETIRQ_EBERR) {
+    //         print("Error: System bus/uDMA");
+    //         while (1);
+    //     }
+    //     e = eth->eir & IRQ_MASK;
+    //     eth->eir = e;
+    // }
 }
 
 static void 
-handle_tx(volatile struct enet_regs *eth)
+handle_tx(volatile struct zynq_gem_regs *eth)
 {
     uintptr_t buffer = 0;
     unsigned int len = 0;
@@ -366,14 +377,35 @@ handle_tx(volatile struct enet_regs *eth)
 
     // We need to put in an empty condition here. 
     while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
+        
         uintptr_t phys = getPhysAddr(buffer);
         raw_tx(eth, 1, &phys, &len, cookie);
     }
 }
 
+
+struct mii_dev mii_bus;
+struct mii_dev *bus = &mii_bus;
+char *device_name = "Gem.2000000";
+
 static void 
 eth_setup(void)
 {
+    u32 i;
+    int ret;
+    struct phy_device *phydev;
+    unsigned long clk_rate = 0;
+    struct zynq_gem_regs *regs = eth;
+    // struct zynq_gem_priv *priv = dev->priv;
+    // struct clock *gem_clk;
+    const u32 supported = SUPPORTED_10baseT_Half |
+                          SUPPORTED_10baseT_Full |
+                          SUPPORTED_100baseT_Half |
+                          SUPPORTED_100baseT_Full |
+                          SUPPORTED_1000baseT_Half |
+                          SUPPORTED_1000baseT_Full;
+
+
     get_mac_addr(eth, mac);
     sel4cp_dbg_puts("MAC: ");
     dump_mac(mac);
@@ -386,92 +418,211 @@ eth_setup(void)
     rx.head = 0;
     rx.phys = shared_dma_paddr;
     rx.cookies = (void **)rx_cookies;
-    rx.descr = (volatile struct descriptor *)hw_ring_buffer_vaddr;
+    rx.descr = (volatile struct emac_bd *)hw_ring_buffer_vaddr;
+
+    for (unsigned int i = 0; i < rx.cnt; i++) {
+        rx.descr[i] = (struct emac_bd) {
+            .addr = ZYNQ_GEM_RXBUF_NEW_MASK,
+            .status = 0
+        };
+    }
+
+    rx.descr[rx.cnt - 1].addr |= ZYNQ_GEM_RXBUF_WRAP_MASK;
 
     tx.cnt = TX_COUNT;
     tx.remain = tx.cnt - 2;
     tx.tail = 0;
     tx.head = 0;
-    tx.phys = shared_dma_paddr + (sizeof(struct descriptor) * RX_COUNT);
+    tx.phys = shared_dma_paddr + (sizeof(struct emac_bd) * RX_COUNT);
     tx.cookies = (void **)tx_cookies;
-    tx.descr = (volatile struct descriptor *)(hw_ring_buffer_vaddr + (sizeof(struct descriptor) * RX_COUNT));
+    tx.descr = (volatile struct emac_bd *)(hw_ring_buffer_vaddr + (sizeof(struct emac_bd) * RX_COUNT));
 
-    /* Perform reset */
-    eth->ecr = ECR_RESET;
-    while (eth->ecr & ECR_RESET);
-    eth->ecr |= ECR_DBSWP;
-
-    /* Clear and mask interrupts */
-    eth->eimr = 0x00000000;
-    eth->eir  = 0xffffffff;
-
-    /* set MDIO freq */
-    eth->mscr = 24 << 1;
-
-    /* Disable */
-    eth->mibc |= MIBC_DIS;
-    while (!(eth->mibc & MIBC_IDLE));
-    /* Clear */
-    eth->mibc |= MIBC_CLEAR;
-    while (!(eth->mibc & MIBC_IDLE));
-    /* Restart */
-    eth->mibc &= ~MIBC_CLEAR;
-    eth->mibc &= ~MIBC_DIS;
-
-    /* Descriptor group and individual hash tables - Not changed on reset */
-    eth->iaur = 0;
-    eth->ialr = 0;
-    eth->gaur = 0;
-    eth->galr = 0;
-
-    if (eth->palr == 0) {
-        // the mac address needs setting again. 
-        set_mac(eth, mac);
+    for (unsigned int i = 0; i < tx.cnt; i++) {
+        tx.descr[i] = (struct emac_bd) {
+            .addr = 0,
+            .status = ZYNQ_GEM_TXBUF_USED_MASK
+        };
     }
 
-    eth->opd = PAUSE_OPCODE_FIELD;
+    tx.descr[tx.cnt - 1].status |= ZYNQ_GEM_TXBUF_WRAP_MASK;
 
-    /* coalesce transmit IRQs to batches of 128 */
-    eth->txic0 = TX_ICEN | ICFT(128) | 0xFF;
-    eth->tipg = TIPG;
-    /* Transmit FIFO Watermark register - store and forward */
-    eth->tfwr = 0;
+    __sync_synchronize();
 
-    /* enable store and forward. This must be done for hardware csums*/
-    eth->rsfl = 0;
-    /* Do not forward frames with errors + check the csum */
-    eth->racc = RACC_LINEDIS | RACC_IPDIS | RACC_PRODIS;
+    miiphy_init();
+    print("|miiphy_init| called\n");
 
-    /* Set RDSR */
-    eth->rdsr = hw_ring_buffer_paddr;
-    eth->tdsr = hw_ring_buffer_paddr + (sizeof(struct descriptor) * RX_COUNT);
+    phy_init();
+    print("|phy_init| called\n");
 
-    /* Size of max eth packet size */
-    eth->mrbr = MAX_PACKET_SIZE;
+    miiphy_register(device_name, zynq_gem_miiphyread, zynq_gem_miiphy_write);
 
-    eth->rcr = RCR_MAX_FL(1518) | RCR_RGMII_EN | RCR_MII_MODE;
-    eth->tcr = TCR_FDEN;
+    bus = miiphy_get_dev_by_name(device_name);
 
-    /* set speed */
-    eth->ecr |= ECR_SPEED;
+    /* Initialize the buffer descriptor registers */
+    writel(lower_32_bits((hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT))), &regs->txqbase);
+#if defined(CONFIG_PHYS_64BIT)
+    writel(upper_32_bits((hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT))), &regs->upper_txqbase);
+#endif
+    writel(lower_32_bits(hw_ring_buffer_paddr), &regs->rxqbase);
+#if defined(CONFIG_PHYS_64BIT)
+    writel(upper_32_bits(hw_ring_buffer_paddr), &regs->upper_rxqbase);
+#endif
 
-    /* Set Enable  in ECR */
-    eth->ecr |= ECR_ETHEREN;
+    print("zynq_gem_init: Start\n");
+    bool dma_64bit; 
+    if (readl(&regs->dcfg6) & ZYNQ_GEM_DCFG_DBG6_DMA_64B) {
+        dma_64bit = true;
+    } else {
+        dma_64bit = false;
+    }
 
-    eth->rdar = RDAR_RDAR;
+    if (!dma_64bit) {
+        print("ERR: %s: Using 64-bit DMA but HW doesn't support it\n");
+        return;
+    }
 
-    /* enable events */
-    eth->eir = eth->eir;
-    eth->eimr = IRQ_MASK;
+    // /* Disable all interrupts */
+    // writel(0xFFFFFFFF, &regs->idr);
+
+    // numbering based on trm
+    // 1. initialise the controller
+
+    /*  Disable the receiver & transmitter */
+    
+    // 1.1 clear network control register
+    writel(0, &regs->nwctrl);
+    
+    writel(0xFFFFFFFF, &regs->txsr);
+    writel(0xFFFFFFFF, &regs->rxsr);
+    writel(0, &regs->phymntnc);
+
+
+    /* 1.4 Disable all interrupts */
+    writel(0x7FFFFFF, &regs->idr);
+
+    // 1.5 clear gem.receive_q{,1}_ptr and  tx regs
+    writel(0, &regs->transmit_q1_ptr);
+    writel(0, &regs->receive_q1_ptr);
+
+    /* Clear the Hash registers for the mac address
+        * pointed by AddressPtr
+        */
+    writel(0x0, &regs->hashl);
+    /* Write bits [63:32] in TOP */
+    writel(0x0, &regs->hashh);
+
+    /* Clear all counters */
+    for (i = 0; i < STAT_SIZE; i++) {
+        readl(&regs->stat[i]);
+    }
+
+    /* Setup for DMA Configuration register */
+    writel(ZYNQ_GEM_DMACR_INIT, &regs->dmacr);
+
+    /* Setup for Network Control register, MDIO, Rx and Tx enable */
+    setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_MDEN_MASK);
+
+    // 3. IO config
+
+    // 4. configure PHY
+
+    int phyaddr = -1;
+    ret = phy_detection(&phyaddr);
+    if (ret) {
+        print("GEM PHY init failed\n");
+        return ret;
+    }
+
+    print("phyaddr = ");
+    puthex64(phyaddr);
+    print("\n");
+
+    phy_interface_t interface = PHY_INTERFACE_MODE_MII;
+
+    /* interface - look at tsec */
+    phydev = phy_connect(bus, phyaddr, NULL,
+                         interface);
+
+
+    phydev->supported = supported | ADVERTISED_Pause |
+                        ADVERTISED_Asym_Pause;
+    phydev->advertising = phydev->supported;
+    // priv->phydev = phydev;
+    phy_config(phydev);
+
+    ret = phy_startup(phydev);
+    if (ret) {
+        print("phy_startup failed!\n");
+        return ret;
+    }
+
+    if (!phydev->link) {
+        print("%s: No link.\n");
+        // print("%s: No link.\n", phydev->dev->name);
+        return -1;
+    }
+
+    switch (phydev->speed) {
+    case SPEED_1000:
+        print("SPEED_1000\n");
+        writel(ZYNQ_GEM_NWCFG_INIT | ZYNQ_GEM_NWCFG_SPEED1000,
+               &regs->nwcfg);
+        clk_rate = ZYNQ_GEM_FREQUENCY_1000;
+        break;
+    case SPEED_100:
+        print("SPEED_100\n");
+        writel(ZYNQ_GEM_NWCFG_INIT | ZYNQ_GEM_NWCFG_SPEED100,
+               &regs->nwcfg);
+        clk_rate = ZYNQ_GEM_FREQUENCY_100;
+        break;
+    case SPEED_10:
+        clk_rate = ZYNQ_GEM_FREQUENCY_10;
+        break;
+    }
+
+    /* Note:
+     * This is the place to configure the the GEM clock if not using the EMIO interface
+     * (!priv->emio). Clock configuration on the ZynqMP is different from the Zynq7000, making
+     * porting non-trivial. For now, assume that the bootloader has set appropriate clock settings.
+     */
+
+    // 5. configure buffer descriptor
+
+    // 6. interrupts
+    // /* Enable IRQs */
+    writel((ZYNQ_GEM_IXR_FRAMERX | ZYNQ_GEM_IXR_TXCOMPLETE), &regs->ier);
+
+    // 7. Enable controller 
+    // 7.1 enable transmit
+    setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_TXEN_MASK);
+    // enable receiver done in fill_rx_buf (in camkes)
+
+    // prom mode enabled:
+    /* Read Current Value and Set CopyAll bit */
+    uint32_t status = readl(&regs->nwcfg);
+    writel(status | ZYNQ_GEM_NWCFG_COPY_ALL, &regs->nwcfg);
+
+    uint8_t new_mac[6];
+    get_mac_addr(eth, new_mac);
+    sel4cp_dbg_puts("post init MAC: ");
+    dump_mac(new_mac);
+    sel4cp_dbg_puts("\n");
 }
 
 void init_post()
 {
+    struct zynq_gem_regs *regs = eth;
+
     /* Set up shared memory regions */
     ring_init(&rx_ring, (ring_buffer_t *)rx_free, (ring_buffer_t *)rx_used, NULL, 0);
     ring_init(&tx_ring, (ring_buffer_t *)tx_free, (ring_buffer_t *)tx_used, NULL, 0);
 
     fill_rx_bufs();
+
+    /* Enable IRQs */
+    // writel((ZYNQ_GEM_IXR_FRAMERX | ZYNQ_GEM_IXR_TXCOMPLETE), &regs->ier);
+    // setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_TXEN_MASK);
+
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");
     sel4cp_notify(INIT);
@@ -488,11 +639,8 @@ void init(void)
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": elf PD init function running\n");
 
-    // eth_setup();
+    eth_setup();
 
-    int num = print("Hello\n");
-    puthex64(num);
-    print("\n");
     /* Now wait for notification from lwip that buffers are initialised */
 }
 
@@ -502,10 +650,11 @@ protected(sel4cp_channel ch, sel4cp_msginfo msginfo)
     switch (ch) {
         case INIT:
             // return the MAC address. 
-            sel4cp_mr_set(0, eth->palr);
-            sel4cp_mr_set(1, eth->paur);
+            sel4cp_mr_set(0, readl(&eth->laddr[0][LADDR_LOW]));
+            sel4cp_mr_set(1, readl(&eth->laddr[0][LADDR_HIGH]));
             return sel4cp_msginfo_new(0, 2);
         case TX_CH:
+            print("In TX_CH protected\n");
             handle_tx(eth);
             break;
         default:
@@ -520,6 +669,7 @@ void notified(sel4cp_channel ch)
 {
     switch(ch) {
         case IRQ_CH:
+            print("In IRQ_CH\n");
             handle_eth(eth);
             have_signal = true;
             signal_msg = seL4_MessageInfo_new(IRQAckIRQ, 0, 0, 0);
@@ -529,10 +679,15 @@ void notified(sel4cp_channel ch)
             init_post();
             break;
         case TX_CH:
+            print("In TX_CH notified\n");
+
             handle_tx(eth);
             break;
         default:
             sel4cp_dbg_puts("eth driver: received notification on unexpected channel\n");
+            print("ch =");
+            puthex64(ch);
+            print("\n");
             break;
     }
 }
