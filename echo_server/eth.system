@@ -39,22 +39,21 @@
 
         <map mr="shared_dma" vaddr="0x2_400_000" perms="rw" cached="true" setvar_vaddr="shared_dma_vaddr" />
 
-        <irq irq="94" id="1" /> <!-- ethernet interrupt -->
+        <irq irq="95" id="1" /> <!-- ethernet interrupt -->
 
         <!-- In case its irq to the other numbers -->
-        <irq irq="89" id="10" />
+        <!-- <irq irq="89" id="10" />
         <irq irq="90" id="11" />
         <irq irq="91" id="12" />
         <irq irq="92" id="13" />
         <irq irq="93" id="21" />
-        <irq irq="95" id="14" />
+        <irq irq="94" id="14" />
         <irq irq="121" id="15" />
         <irq irq="122" id="16" />
         <irq irq="123" id="17" />
         <irq irq="124" id="18" />
-       <!-- phy gpio? -->
         <irq irq="125" id="19" />
-        <irq irq="126" id="23" />
+        <irq irq="126" id="23" /> -->
         <irq irq="127" id="22" />
         <!-- <irq irq="101" id="24" /> -->
         

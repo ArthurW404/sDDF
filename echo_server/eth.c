@@ -12,6 +12,7 @@
 #include "util.h"
 #include "io.h"
 
+#include "timer.h"
 #include "miiphy.h"
 #include "zynq_gem.h"
 
@@ -124,16 +125,16 @@ static void update_ring_slot(
     uint16_t len,
     uint16_t stat)
 {
-    // volatile struct emac_bd *d = &(ring->descr[idx]);
-    // d->addr = phys;
+    volatile struct emac_bd *d = &(ring->descr[idx]);
+    d->addr = phys;
     // d->len = len;
 
-    // /* Ensure all writes to the descriptor complete, before we set the flags
-    //  * that makes hardware aware of this slot.
-    //  */
-    // __sync_synchronize();
+    /* Ensure all writes to the descriptor complete, before we set the flags
+     * that makes hardware aware of this slot.
+     */
+    __sync_synchronize();
 
-    // d->stat = stat;
+    d->status = stat;
 }
 
 static inline void
@@ -161,75 +162,94 @@ alloc_rx_buf(size_t buf_size, void **cookie)
 
 static void fill_rx_bufs()
 {
-    // ring_ctx_t *ring = &rx;
-    // __sync_synchronize();
-    // while (ring->remain > 0) {
-    //     /* request a buffer */
-    //     void *cookie = NULL;
-    //     uintptr_t phys = alloc_rx_buf(MAX_PACKET_SIZE, &cookie);
-    //     if (!phys) {
-    //         break;
-    //     }
-    //     uint16_t stat = RXD_EMPTY;
-    //     int idx = ring->tail;
-    //     int new_tail = idx + 1;
-    //     if (new_tail == ring->cnt) {
-    //         new_tail = 0;
-    //         stat |= WRAP;
-    //     }
-    //     ring->cookies[idx] = cookie;
-    //     update_ring_slot(ring, idx, phys, 0, stat);
-    //     ring->tail = new_tail;
-    //     /* There is a race condition if add/remove is not synchronized. */
-    //     ring->remain--;
-    // }
-    // __sync_synchronize();
+    ring_ctx_t *ring = &rx;
+    __sync_synchronize();
+    while (ring->remain > 0) {
+        /* request a buffer */
+        void *cookie = NULL;
+        uintptr_t phys = alloc_rx_buf(MAX_PACKET_SIZE, &cookie);
+        if (!phys) {
+            break;
+        }
+        uint32_t stat = 0;
+        int idx = ring->tail;
+        int new_tail = idx + 1;
+        if (new_tail == ring->cnt) {
+            new_tail = 0;
+            stat |= ZYNQ_GEM_TXBUF_WRAP_MASK;
+        }
+        ring->cookies[idx] = cookie;
+        // update_ring_slot(ring, idx, phys, 0, stat);
+        ring->descr[idx].status = stat;
 
-    // if (ring->tail != ring->head) {
-    //     /* Make sure rx is enabled */
-    //     eth->rdar = RDAR_RDAR;
-    // }
+        ring->descr[idx].addr &=  ~(ZYNQ_GEM_RXBUF_NEW_MASK | ZYNQ_GEM_RXBUF_ADD_MASK);
+
+        ring->descr[idx].addr |= (phys & ZYNQ_GEM_RXBUF_ADD_MASK);
+        
+        __sync_synchronize();
+
+        ring->tail = new_tail;
+        /* There is a race condition if add/remove is not synchronized. */
+        ring->remain--;
+    }
+    __sync_synchronize();
+
+    if (ring->tail != ring->head  && !zynq_gem_recv_enabled(eth)) {
+        /* Make sure rx is enabled */
+        zynq_gem_recv_enable(eth);
+    }
 }
 
 static void
 handle_rx(volatile struct zynq_gem_regs *eth)
 {
-//     ring_ctx_t *ring = &rx;
-//     unsigned int head = ring->head;
+    ring_ctx_t *ring = &rx;
+    unsigned int head = ring->head;
 
-//     int num = 1;
-//     int was_empty = ring_empty(rx_ring.used_ring);
+    int num = 1;
+    int was_empty = ring_empty(rx_ring.used_ring);
 
-//     // we don't want to dequeue packets if we have nothing to replace it with
-//     while (head != ring->tail && (ring_size(rx_ring.free_ring) > num)) {
-//         volatile struct emac_bd *d = &(ring->descr[head]);
+    // we don't want to dequeue packets if we have nothing to replace it with
+    while (head != ring->tail && (ring_size(rx_ring.free_ring) > num)) {
+        volatile struct emac_bd *d = &(ring->descr[head]);
 
-//         /* If the slot is still marked as empty we are done. */
-//         if (d->stat & RXD_EMPTY) {
-//             break;
-//         }
+        unsigned int status = d->status;
+        unsigned int addr = d->addr;
 
-//         void *cookie = ring->cookies[head];
-//         /* Go to next buffer, handle roll-over. */
-//         if (++head == ring->cnt) {
-//             head = 0;
-//         }
-//         ring->head = head;
+        /* Ensure no memory references get ordered before we checked the descriptor was written back */
+        __sync_synchronize();
+        if (!(addr & ZYNQ_GEM_RXBUF_NEW_MASK)) {
+            /* not complete yet */
+            break;
+        }
 
-//         /* There is a race condition here if add/remove is not synchronized. */
-//         ring->remain++;
+        void *cookie = ring->cookies[head];        
+        unsigned int len = status & ZYNQ_GEM_RXBUF_LEN_MASK;
 
-//         buff_desc_t *desc = (buff_desc_t *)cookie;
+        /* Go to next buffer, handle roll-over. */
+        if (++head == ring->cnt) {
+            head = 0;
+        }
+        ring->head = head;
 
-//         enqueue_used(&rx_ring, desc->encoded_addr, d->len, desc->cookie);
-//         num++;
-//     }
+        /* There is a race condition here if add/remove is not synchronized. */
+        ring->remain++;
 
-//     /* Notify client (only if we have actually processed a packet and 
-//     the client hasn't already been notified!) */
-//     if (num > 1 && was_empty) {
-//         sel4cp_notify(RX_CH);
-//     } 
+        buff_desc_t *desc = (buff_desc_t *)cookie;
+
+        enqueue_used(&rx_ring, desc->encoded_addr, len, desc->cookie);
+        num++;
+    }
+
+    /* Notify client (only if we have actually processed a packet and 
+    the client hasn't already been notified!) */
+    if (num > 1 && was_empty) {
+        sel4cp_notify(RX_CH);
+    } 
+
+    if (ring->tail != ring->head && !zynq_gem_recv_enabled(eth)) {
+        zynq_gem_recv_enable(eth);
+    }
 }
 
 static void
@@ -292,6 +312,7 @@ raw_tx(volatile struct zynq_gem_regs *eth, unsigned int num, uintptr_t *phys,
     /* Ensure we have room */
     if (ring->remain < num) {
         /* not enough room, try to complete some and check again */
+        sel4cp_dbg_puts("not enough room in raw_tx\n");
         complete_tx(eth);
         unsigned int rem = ring->remain;
         if (rem < num) {
@@ -351,20 +372,33 @@ handle_eth(volatile struct zynq_gem_regs *eth)
     // /* write to clear events */
     // eth->eir = e;
 
+    // Clear Interrupts
+    u32 isr = readl(&eth->isr);
+    writel(isr, &eth->isr);
+    
     // while (e & IRQ_MASK) {
-    //     if (e & NETIRQ_TXF) {
-    //         complete_tx(eth);
-    //     }
-    //     if (e & NETIRQ_RXF) {
-    //         handle_rx(eth);
-    //         fill_rx_bufs(eth);
-    //     }
-    //     if (e & NETIRQ_EBERR) {
-    //         print("Error: System bus/uDMA");
-    //         while (1);
-    //     }
-    //     e = eth->eir & IRQ_MASK;
-    //     eth->eir = e;
+    if (isr & ZYNQ_GEM_IXR_TXCOMPLETE) {
+        sel4cp_dbg_puts("IRQ is a TXCOMPLETE\n");
+        /* Clear TX Status register */
+        u32 val = readl(&eth->txsr);
+        writel(val, &eth->txsr);
+
+        complete_tx(eth);
+    }
+
+    if (isr & ZYNQ_GEM_IXR_FRAMERX) {
+        sel4cp_dbg_puts("IRQ is a RXCOMPLETE\n");
+        /* Clear RX Status register */
+        u32 val = readl(&eth->rxsr);
+        writel(val, &eth->rxsr);
+
+        handle_rx(eth);
+        fill_rx_bufs(eth);
+    }
+
+        // do I need this last section for zcu102
+        // e = eth->eir & IRQ_MASK;
+        // eth->eir = e;
     // }
 }
 
@@ -533,6 +567,8 @@ eth_setup(void)
         return ret;
     }
 
+    // printf_("printf: phyaddr = %d\n", phyaddr);
+
     print("phyaddr = ");
     puthex64(phyaddr);
     print("\n");
@@ -636,6 +672,7 @@ void init_post()
 
 void init(void)
 {
+    udelay(100000);
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": elf PD init function running\n");
 
