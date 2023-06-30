@@ -12,9 +12,9 @@
 #include "util.h"
 #include "io.h"
 
-#include "timer.h"
 #include "miiphy.h"
 #include "zynq_gem.h"
+#include "net.h"
 
 #define IRQ_CH 1
 #define TX_CH  2
@@ -411,20 +411,21 @@ handle_tx(volatile struct zynq_gem_regs *eth)
 
     // We need to put in an empty condition here. 
     while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
-        
         uintptr_t phys = getPhysAddr(buffer);
         raw_tx(eth, 1, &phys, &len, cookie);
     }
 }
 
-
 struct mii_dev mii_bus;
 struct mii_dev *bus = &mii_bus;
 char *device_name = "Gem.2000000";
+struct eth_device eth_dev; 
 
 static void 
 eth_setup(void)
 {
+    struct eth_device *dev = &eth_dev; 
+
     u32 i;
     int ret;
     struct phy_device *phydev;
@@ -438,7 +439,6 @@ eth_setup(void)
                           SUPPORTED_100baseT_Full |
                           SUPPORTED_1000baseT_Half |
                           SUPPORTED_1000baseT_Full;
-
 
     get_mac_addr(eth, mac);
     sel4cp_dbg_puts("MAC: ");
@@ -482,15 +482,17 @@ eth_setup(void)
 
     __sync_synchronize();
 
+    sprintf(dev->name, "Gem.%lx", eth);
+
     miiphy_init();
     print("|miiphy_init| called\n");
 
     phy_init();
     print("|phy_init| called\n");
 
-    miiphy_register(device_name, zynq_gem_miiphyread, zynq_gem_miiphy_write);
+    miiphy_register(dev->name, zynq_gem_miiphyread, zynq_gem_miiphy_write);
 
-    bus = miiphy_get_dev_by_name(device_name);
+    bus = miiphy_get_dev_by_name(dev->name);
 
     /* Initialize the buffer descriptor registers */
     writel(lower_32_bits((hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT))), &regs->txqbase);
@@ -575,8 +577,9 @@ eth_setup(void)
 
     phy_interface_t interface = PHY_INTERFACE_MODE_MII;
 
+
     /* interface - look at tsec */
-    phydev = phy_connect(bus, phyaddr, NULL,
+    phydev = phy_connect(bus, phyaddr, dev,
                          interface);
 
 
@@ -624,19 +627,19 @@ eth_setup(void)
 
     // 5. configure buffer descriptor
 
-    // 6. interrupts
-    // /* Enable IRQs */
-    writel((ZYNQ_GEM_IXR_FRAMERX | ZYNQ_GEM_IXR_TXCOMPLETE), &regs->ier);
+    // // 6. interrupts
+    // // /* Enable IRQs */
+    // writel((ZYNQ_GEM_IXR_FRAMERX | ZYNQ_GEM_IXR_TXCOMPLETE), &regs->ier);
 
-    // 7. Enable controller 
-    // 7.1 enable transmit
-    setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_TXEN_MASK);
-    // enable receiver done in fill_rx_buf (in camkes)
+    // // 7. Enable controller 
+    // // 7.1 enable transmit
+    // setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_TXEN_MASK);
+    // // enable receiver done in fill_rx_buf (in camkes)
 
-    // prom mode enabled:
-    /* Read Current Value and Set CopyAll bit */
-    uint32_t status = readl(&regs->nwcfg);
-    writel(status | ZYNQ_GEM_NWCFG_COPY_ALL, &regs->nwcfg);
+    // // prom mode enabled:
+    // /* Read Current Value and Set CopyAll bit */
+    // uint32_t status = readl(&regs->nwcfg);
+    // writel(status | ZYNQ_GEM_NWCFG_COPY_ALL, &regs->nwcfg);
 
     uint8_t new_mac[6];
     get_mac_addr(eth, new_mac);
@@ -655,9 +658,20 @@ void init_post()
 
     fill_rx_bufs();
 
-    /* Enable IRQs */
-    // writel((ZYNQ_GEM_IXR_FRAMERX | ZYNQ_GEM_IXR_TXCOMPLETE), &regs->ier);
-    // setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_TXEN_MASK);
+    // 6. interrupts
+    // /* Enable IRQs */
+    writel((ZYNQ_GEM_IXR_FRAMERX | ZYNQ_GEM_IXR_TXCOMPLETE), &regs->ier);
+
+    // 7. Enable controller 
+    // 7.1 enable transmit
+    setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_TXEN_MASK);
+    // enable receiver done in fill_rx_buf (in camkes)
+
+    // prom mode enabled:
+    /* Read Current Value and Set CopyAll bit */
+    uint32_t status = readl(&regs->nwcfg);
+    writel(status | ZYNQ_GEM_NWCFG_COPY_ALL, &regs->nwcfg);
+
 
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");

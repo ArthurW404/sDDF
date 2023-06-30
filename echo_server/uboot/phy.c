@@ -262,25 +262,25 @@ int genphy_update_link(struct phy_device *phydev)
         !(mii_reg & BMSR_ANEGCOMPLETE)) {
         int i = 0;
 
-        print("%s Waiting for PHY auto negotiation to complete\n");
-        // print("%s Waiting for PHY auto negotiation to complete", phydev->dev->name);
+        // printf_("%s Waiting for PHY auto negotiation to complete");
+        printf_("%s Waiting for PHY auto negotiation to complete", phydev->dev->name);
         while (!(mii_reg & BMSR_ANEGCOMPLETE)) {
             /*
              * Timeout reached ?
              */
             if (i > PHY_ANEG_TIMEOUT) {
-                print(" TIMEOUT !\n");
+                printf_(" TIMEOUT !\n");
                 phydev->link = 0;
                 return -ETIMEDOUT;
             }
 
             if ((i++ % 500) == 0) {
-                print(".");
+                printf_(".");
             }
             udelay(1000);   /* 1 ms */
             mii_reg = phy_read(phydev, MDIO_DEVAD_NONE, MII_BMSR);
         }
-        print(" done\n");
+        printf_(" done\n");
         phydev->link = 1;
     } else {
         /* Read the link a second time to clear the latched state */
@@ -403,7 +403,7 @@ int genphy_parse_link(struct phy_device *phydev)
 
 int genphy_config(struct phy_device *phydev)
 {
-    print("|genphy_config| called\n");
+    printf_("|genphy_config| called\n");
     int val;
     u32 features;
 
@@ -653,9 +653,8 @@ static struct phy_device *phy_device_create(struct mii_dev *bus, int addr,
      * default values */
     dev = malloc(sizeof(*dev));
     if (!dev) {
-        print("Failed to allocate PHY device for %s:%d\n");
-        // print("Failed to allocate PHY device for %s:%d\n",
-        //        bus->name, addr);
+        printf_("Failed to allocate PHY device for %s:%d\n",
+               bus->name, addr);
         return NULL;
     }
 
@@ -836,7 +835,7 @@ int phy_reset(struct phy_device *phydev)
     }
 
     if (reg & BMCR_RESET) {
-        print("PHY reset timed out\n");
+        printf_("PHY reset timed out\n");
         return -1;
     }
 
@@ -881,14 +880,13 @@ void phy_connect_dev(struct phy_device *phydev, struct eth_device *dev)
     /* Soft Reset the PHY */
     phy_reset(phydev);
     if (phydev->dev && phydev->dev != dev) {
-        // print("%s:%d is connected to %s.  Reconnecting to %s\n",
-        //        phydev->bus->name, phydev->addr,
-        //        phydev->dev->name, dev->name);
-        print("%s:%d is connected to %s.  Reconnecting to %s\n");
+        printf_("%s:%d is connected to %s.  Reconnecting to %s\n",
+               phydev->bus->name, phydev->addr,
+               phydev->dev->name, dev->name);
     }
     phydev->dev = dev;
     // not connecting 
-    // debug("%s connected to %s\n", dev->name, phydev->drv->name);
+    debug("%s connected to %s\n", dev->name, phydev->drv->name);
 }
 
 #ifdef CONFIG_DM_ETH
@@ -905,8 +903,7 @@ struct phy_device *phy_connect(struct mii_dev *bus, int addr,
     if (phydev) {
         phy_connect_dev(phydev, dev);
     } else {
-        print("Could not get PHY for %s: addr %d\n");
-        // print("Could not get PHY for %s: addr %d\n", bus->name, addr);
+        printf_("Could not get PHY for %s: addr %d\n", bus->name, addr);
     }
     return phydev;
 }

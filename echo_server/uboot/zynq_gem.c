@@ -78,7 +78,7 @@ static inline int mdio_wait(volatile struct zynq_gem_regs *regs)
     }
 
     if (!timeout) {
-        print("%s: Timeout\n");
+        printf_("%s: Timeout\n", __func__);
         return 1;
     }
 
@@ -364,21 +364,19 @@ int zynq_gem_start_send(volatile struct zynq_gem_regs *regs, uintptr_t txbase)
     writel(upper_32_bits(txbase), &regs->upper_txqbase);
 #endif
 
-    __sync_synchronize();
-
     /* Start transmit */
     setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_STARTTX_MASK);
 
-    int i = 0;
-    for (; i < 20000; i++) {
-        if ((regs->txsr & ZYNQ_GEM_TSR_DONE) == ZYNQ_GEM_TSR_DONE) {
-            break;
-        }
-    }
+    // int i = 0;
+    // for (; i < 20000; i++) {
+    //     if ((regs->txsr & ZYNQ_GEM_TSR_DONE) == ZYNQ_GEM_TSR_DONE) {
+    //         break;
+    //     }
+    // }
 
-    print("ZYNQ_GEM_TSR_DONE after i = ");
-    puthex64(i);
-    print("\n");
+    // print("ZYNQ_GEM_TSR_DONE after i = ");
+    // puthex64(i);
+    // print("\n");
 
     return 0;
 }

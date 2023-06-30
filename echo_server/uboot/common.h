@@ -32,6 +32,7 @@
 
 #include "config.h"
 #include "util.h"
+#include "printf.h"
 
 
 #ifdef CONFIG_POST
@@ -53,6 +54,7 @@
 #define __ALIGN_MASK(x,mask)    (((x)+(mask))&~(mask))
 
 
+#define ETH_DEBUG
 
 #ifdef ETH_DEBUG
 #define _DEBUG  1
@@ -68,7 +70,7 @@
 #define debug_cond(cond, fmt, args...)      \
     do {                    \
         if (cond)           \
-            print(fmt);    \
+            printf_(fmt, ##args);    \
     } while (0)
 
 #define debug(fmt, args...)         \

@@ -40,6 +40,7 @@
 #include "malloc.h"
 #include <string.h>
 #include "util.h"
+#include "printf.h"
 
 #define BUG_ON(x) do {} while(0)
 
@@ -48,7 +49,7 @@
 
 #undef debug
 #ifdef MII_DEBUG
-#define debug(fmt, args...) print(fmt)
+#define debug(fmt, args...) printf_(fmt, ##args)
 #else
 #define debug(fmt, args...)
 #endif /* MII_DEBUG */
@@ -65,7 +66,7 @@ struct mii_dev *miiphy_get_dev_by_name(const char *devname)
     struct mii_dev *dev;
 
     if (!devname) {
-        print("NULL device name!\n");
+        printf_("NULL device name!\n");
         return NULL;
     }
 
@@ -128,8 +129,7 @@ void miiphy_register(const char *name,
     /* check if we have unique name */
     new_dev = miiphy_get_dev_by_name(name);
     if (new_dev) {
-        print("miiphy_register: non unique device name '%s'\n");
-        // print("miiphy_register: non unique device name '%s'\n", name);
+        printf_("miiphy_register: non unique device name '%s'\n", name);
         return;
     }
 
@@ -138,9 +138,8 @@ void miiphy_register(const char *name,
     ldev = malloc(sizeof(*ldev));
 
     if (new_dev == NULL || ldev == NULL) {
-        // print("miiphy_register: cannot allocate memory for '%s'\n",
-        //        name);
-        print("miiphy_register: cannot allocate memory for '%s'\n");
+        printf_("miiphy_register: cannot allocate memory for '%s'\n",
+               name);
         return;
     }
 
@@ -188,9 +187,8 @@ int mdio_register(struct mii_dev *bus)
 
     /* check if we have unique name */
     if (miiphy_get_dev_by_name(bus->name)) {
-        // print("mdio_register: non unique device name '%s'\n",
-        //        bus->name);
-        print("mdio_register: non unique device name '%s'\n");
+        printf_("mdio_register: non unique device name '%s'\n",
+               bus->name);
         return -1;
     }
 
@@ -206,23 +204,23 @@ int mdio_register(struct mii_dev *bus)
 void mdio_list_devices(void)
 {
     struct list_head *entry;
-    print("|mdio_list_devices| called");
+    printf_("|mdio_list_devices| called");
     // list_for_each(entry, &mii_devs) {
     //     int i;
     //     struct mii_dev *bus = list_entry(entry, struct mii_dev, link);
 
-    //     print("%s:\n", bus->name);
+    //     printf_("%s:\n", bus->name);
 
     //     for (i = 0; i < PHY_MAX_ADDR; i++) {
     //         struct phy_device *phydev = bus->phymap[i];
 
     //         if (phydev) {
-    //             print("%d - %s", i, phydev->drv->name);
+    //             printf_("%d - %s", i, phydev->drv->name);
 
     //             if (phydev->dev) {
-    //                 print(" <--> %s\n", phydev->dev->name);
+    //                 printf_(" <--> %s\n", phydev->dev->name);
     //             } else {
-    //                 print("\n");
+    //                 printf_("\n");
     //             }
     //         }
     //     }
@@ -239,8 +237,7 @@ int miiphy_set_current_dev(const char *devname)
         return 0;
     }
 
-    print("No such device: %s\n");
-    // print("No such device: %s\n", devname);
+    printf_("No such device: %s\n", devname);
 
     return 1;
 }
@@ -269,8 +266,7 @@ struct phy_device *mdio_phydev_for_ethname(const char *ethname)
         }
     }
 
-    print("%s is not a known ethernet\n");
-    // print("%s is not a known ethernet\n", ethname);
+    printf_("%s is not a known ethernet\n", ethname);
     return NULL;
 }
 
@@ -354,23 +350,22 @@ int miiphy_write(const char *devname, unsigned char addr, unsigned char reg,
 
 /*****************************************************************************
  *
- * Print out list of registered MII capable devices.
+ * printf_ out list of registered MII capable devices.
  */
 void miiphy_listdev(void)
 {
     struct list_head *entry;
     struct mii_dev *dev;
 
-    print("MII devices: ");
-    // list_for_each(entry, &mii_devs) {
-    //     dev = list_entry(entry, struct mii_dev, link);
-    //     print("'%s' ", dev->name);
-    // }
-    // print("\n");
+    printf_("MII devices: ");
+    list_for_each(entry, &mii_devs) {
+        dev = list_entry(entry, struct mii_dev, link);
+        // printf_("'%s' ", dev->name);
+    }
+    printf_("\n");
 
     if (current_mii) {
-        print("Current device: '%s'\n");
-        // print("Current device: '%s'\n", current_mii->name);
+        printf_("Current device: '%s'\n", current_mii->name);
     }
 }
 
@@ -461,7 +456,7 @@ int miiphy_reset(const char *devname, unsigned char addr)
     if ((reg & 0x8000) == 0) {
         return 0;
     } else {
-        print("PHY reset timed out\n");
+        printf_("PHY reset timed out\n");
         return -1;
     }
     return 0;
@@ -491,7 +486,7 @@ int miiphy_speed(const char *devname, unsigned char addr)
      */
     /* Check for 1000BASE-T. */
     if (miiphy_read(devname, addr, MII_STAT1000, &btsr)) {
-        print("PHY 1000BT status");
+        printf_("PHY 1000BT status");
         goto miiphy_read_failed;
     }
     if (btsr != 0xFFFF &&
@@ -502,14 +497,14 @@ int miiphy_speed(const char *devname, unsigned char addr)
 
     /* Check Basic Management Control Register first. */
     if (miiphy_read(devname, addr, MII_BMCR, &bmcr)) {
-        print("PHY speed");
+        printf_("PHY speed");
         goto miiphy_read_failed;
     }
     /* Check if auto-negotiation is on. */
     if (bmcr & BMCR_ANENABLE) {
         /* Get auto-negotiation results. */
         if (miiphy_read(devname, addr, MII_LPA, &anlpar)) {
-            print("PHY AN speed");
+            printf_("PHY AN speed");
             goto miiphy_read_failed;
         }
         return (anlpar & LPA_100) ? _100BASET : _10BASET;
@@ -518,7 +513,7 @@ int miiphy_speed(const char *devname, unsigned char addr)
     return (bmcr & BMCR_SPEED100) ? _100BASET : _10BASET;
 
 miiphy_read_failed:
-    print(" read failed, assuming 10BASE-T\n");
+    printf_(" read failed, assuming 10BASE-T\n");
     return _10BASET;
 }
 
@@ -537,7 +532,7 @@ int miiphy_duplex(const char *devname, unsigned char addr)
     if (miiphy_is_1000base_x(devname, addr)) {
         /* 1000BASE-X */
         if (miiphy_read(devname, addr, MII_LPA, &anlpar)) {
-            print("1000BASE-X PHY AN duplex");
+            printf_("1000BASE-X PHY AN duplex");
             goto miiphy_read_failed;
         }
     }
@@ -546,7 +541,7 @@ int miiphy_duplex(const char *devname, unsigned char addr)
      */
     /* Check for 1000BASE-T. */
     if (miiphy_read(devname, addr, MII_STAT1000, &btsr)) {
-        print("PHY 1000BT status");
+        printf_("PHY 1000BT status");
         goto miiphy_read_failed;
     }
     if (btsr != 0xFFFF) {
@@ -560,14 +555,14 @@ int miiphy_duplex(const char *devname, unsigned char addr)
 
     /* Check Basic Management Control Register first. */
     if (miiphy_read(devname, addr, MII_BMCR, &bmcr)) {
-        print("PHY duplex");
+        printf_("PHY duplex");
         goto miiphy_read_failed;
     }
     /* Check if auto-negotiation is on. */
     if (bmcr & BMCR_ANENABLE) {
         /* Get auto-negotiation results. */
         if (miiphy_read(devname, addr, MII_LPA, &anlpar)) {
-            print("PHY AN duplex");
+            printf_("PHY AN duplex");
             goto miiphy_read_failed;
         }
         return (anlpar & (LPA_10FULL | LPA_100FULL)) ?
@@ -577,7 +572,7 @@ int miiphy_duplex(const char *devname, unsigned char addr)
     return (bmcr & BMCR_FULLDPLX) ? FULL : HALF;
 
 miiphy_read_failed:
-    print(" read failed, assuming half duplex\n");
+    printf_(" read failed, assuming half duplex\n");
     return HALF;
 }
 
@@ -592,7 +587,7 @@ int miiphy_is_1000base_x(const char *devname, unsigned char addr)
     u16 exsr;
 
     if (miiphy_read(devname, addr, MII_ESTATUS, &exsr)) {
-        print("PHY extended status read failed, assuming no "
+        printf_("PHY extended status read failed, assuming no "
                "1000BASE-X\n");
         return 0;
     }
@@ -614,7 +609,7 @@ int miiphy_link(const char *devname, unsigned char addr)
     /* dummy read; needed to latch some phys */
     (void)miiphy_read(devname, addr, MII_BMSR, &reg);
     if (miiphy_read(devname, addr, MII_BMSR, &reg)) {
-        print("MII_BMSR read failed, assuming no link\n");
+        printf_("MII_BMSR read failed, assuming no link\n");
         return 0;
     }
 
