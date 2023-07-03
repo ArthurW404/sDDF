@@ -83,7 +83,8 @@
         <!-- shared memory used for benchmarking -->
         <map mr="cyclecounters" vaddr="0x5_010_000" perms="rw" cached="true" setvar_vaddr="cyclecounters_vaddr" />
 
-        <irq irq="87" id="1" /> <!-- timer interrupt -->
+        <irq irq="68" id="1" /> <!-- timer interrupt -->
+
     </protection_domain>
 
     <protection_domain name="benchIdle" priority="1">
