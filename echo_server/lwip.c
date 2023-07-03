@@ -429,22 +429,7 @@ void init(void)
     puthex64(now_2);
     print("\n");
 
-    // sel4cp_notify(INIT);
-    
-    print("Entering lwip spinning!!\n");
-
-    while (1) {
-        u32_t before_udelay = sys_now();
-        print("before_udelay =");
-        puthex64(before_udelay);
-        print("\n");
-        udelay(5000000); /* another 500 ms (results in faster booting) */
-
-        u32_t after_udelay = sys_now();
-        print("after after_udelay =");
-        puthex64(after_udelay);
-        print("\n");
-    }
+    sel4cp_notify(INIT);
 }
 
 void notified(sel4cp_channel ch)

@@ -214,7 +214,7 @@ handle_rx(volatile struct zynq_gem_regs *eth)
         volatile struct emac_bd *d = &(ring->descr[head]);
 
         unsigned int status = d->status;
-        unsigned int addr = d->addr;
+        uint64_t addr = d->addr | (d->addr_hi << 32);
 
         /* Ensure no memory references get ordered before we checked the descriptor was written back */
         __sync_synchronize();
@@ -226,6 +226,21 @@ handle_rx(volatile struct zynq_gem_regs *eth)
         void *cookie = ring->cookies[head];        
         unsigned int len = status & ZYNQ_GEM_RXBUF_LEN_MASK;
 
+        // printf_("|handle_rx| packet len = %d\n", len);
+        // printf_("|handle_rx| 0th bytes buffer = ");
+        // uint8_t *packet = &addr;
+        // dump_mac(&packet[0]);
+        // printf_("\n");
+        // printf_("|handle_rx| 6th bytes buffer = ");
+        // dump_mac(&packet[6]);
+        // printf_("\n");
+     
+        // printf_("|handle_rx| 8th bytes buffer = ");
+        // dump_mac(&packet[8]);
+        // printf_("\n");
+        // printf_("|handle_rx| second 14th bytes buffer = ");
+        // dump_mac(&packet[14]);
+        // printf_("\n");
         /* Go to next buffer, handle roll-over. */
         if (++head == ring->cnt) {
             head = 0;
@@ -323,8 +338,15 @@ raw_tx(volatile struct zynq_gem_regs *eth, unsigned int num, uintptr_t *phys,
 
     __sync_synchronize();
 
-    uintptr_t txbase = ring->phys + (uintptr_t)(ring->tail * sizeof(struct emac_bd));
-    
+
+//   writel(lower_32_bits(hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT)), &regs->txqbase);
+// #if defined(CONFIG_PHYS_64BIT)
+//     writel(upper_32_bits((hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT))), &regs->upper_txqbase);
+
+    // TODO need to check if ring->phy is correct
+    // uintptr_t txbase = ring->phys + (uintptr_t)(ring->tail * sizeof(struct emac_bd));
+    uintptr_t txbase = lower_32_bits(hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT));
+
     unsigned int tail = ring->tail;
     unsigned int tail_new = tail;
 
@@ -378,7 +400,7 @@ handle_eth(volatile struct zynq_gem_regs *eth)
     
     // while (e & IRQ_MASK) {
     if (isr & ZYNQ_GEM_IXR_TXCOMPLETE) {
-        sel4cp_dbg_puts("IRQ is a TXCOMPLETE\n");
+        sel4cp_dbg_puts("===> IRQ is a TXCOMPLETE :DD\n");
         /* Clear TX Status register */
         u32 val = readl(&eth->txsr);
         writel(val, &eth->txsr);
@@ -411,6 +433,17 @@ handle_tx(volatile struct zynq_gem_regs *eth)
 
     // We need to put in an empty condition here. 
     while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
+        printf_("|handle_tx| buffer length = %d\n", len);
+
+        
+        printf_("|handle_tx| 0th bytes buffer = ");
+        uint8_t *packet = &buffer;
+        dump_mac(&packet[0]);
+        printf_("\n");
+        printf_("|handle_tx| 6th bytes buffer = ");
+        dump_mac(&packet[6]);
+        printf_("\n");
+     
         uintptr_t phys = getPhysAddr(buffer);
         raw_tx(eth, 1, &phys, &len, cookie);
     }
