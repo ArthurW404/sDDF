@@ -288,17 +288,39 @@ static void netif_status_callback(struct netif *netif)
     }
 }
 
+static void
+dump_mac(uint8_t *mac)
+{
+    for (unsigned i = 0; i < 6; i++) {
+        sel4cp_dbg_putc(hexchar((mac[i] >> 4) & 0xf));
+        sel4cp_dbg_putc(hexchar(mac[i] & 0xf));
+        if (i < 5) {
+            sel4cp_dbg_putc(':');
+        }
+    }
+}
+
 static void get_mac(void)
 {
     sel4cp_ppcall(INIT, sel4cp_msginfo_new(0, 0));
     uint32_t palr = sel4cp_mr_get(0);
     uint32_t paur = sel4cp_mr_get(1);
-    state.mac[0] = palr >> 24;
-    state.mac[1] = palr >> 16 & 0xff;
-    state.mac[2] = palr >> 8 & 0xff;
-    state.mac[3] = palr & 0xff;
-    state.mac[4] = paur >> 24;
-    state.mac[5] = paur >> 16 & 0xff;
+    // state.mac[0] = palr >> 24;
+    // state.mac[1] = palr >> 16 & 0xff;
+    // state.mac[2] = palr >> 8 & 0xff;
+    // state.mac[3] = palr & 0xff;
+    // state.mac[4] = paur >> 24;
+    // state.mac[5] = paur >> 16 & 0xff;
+    state.mac[3] = palr >> 24;
+    state.mac[2] = palr >> 16 & 0xff;
+    state.mac[1] = palr >> 8 & 0xff;
+    state.mac[0] = palr & 0xff;
+    state.mac[5] = paur >> 8 & 0xff;
+    state.mac[4] = paur & 0xff;
+
+    sel4cp_dbg_puts("lwip mac: ");
+    dump_mac(state.mac);
+    sel4cp_dbg_puts("\n");
 }
 
 void init_post(void)
@@ -315,6 +337,14 @@ void init_post(void)
 
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for notification\n");
+}
+
+void udelay(uint32_t us){
+    volatile int i;
+    for(; us > 0; us--){
+        for(i = 0; i < 100; i++){
+        }
+    }
 }
 
 void init(void)
@@ -394,8 +424,27 @@ void init(void)
     }
 
     netif_set_default(&(state.netif));
+    u32_t now_2 = sys_now();
+    print("after netif_set_default now_2 =");
+    puthex64(now_2);
+    print("\n");
 
-    sel4cp_notify(INIT);
+    // sel4cp_notify(INIT);
+    
+    print("Entering lwip spinning!!\n");
+
+    while (1) {
+        u32_t before_udelay = sys_now();
+        print("before_udelay =");
+        puthex64(before_udelay);
+        print("\n");
+        udelay(5000000); /* another 500 ms (results in faster booting) */
+
+        u32_t after_udelay = sys_now();
+        print("after after_udelay =");
+        puthex64(after_udelay);
+        print("\n");
+    }
 }
 
 void notified(sel4cp_channel ch)

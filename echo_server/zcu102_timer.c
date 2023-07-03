@@ -1,4 +1,5 @@
 #include "timer.h"
+#include "fence.h"
 
 #define CLKCTRL_EXT_NEDGE           BIT(6)
 #define CLKCTRL_EXT_SRC_EN          BIT(5)
@@ -134,13 +135,30 @@ struct ttc_tmr_regs {
     } while (0)
 
 
-static uint32_t overflow_count;
+static uint64_t hi_time;
 int timers_initialised = 0;
+freq_t clk_freq;
+
+static inline bool _ttc_check_interrupt(volatile struct ttc_tmr_regs *regs)
+{
+    /* The int_sts register is being accessed through typedef ttc_tmr_regs_t
+     * which is marked volatile, so the compiler will not elide this read.
+     */
+    uint32_t res = *regs->int_sts;
+    /* There are no data dependencies within this function that imply that the
+     * CPU cannot reorder this read in the pipeline. Use a CPU read barrier to
+     * inform the CPU that it should stall reads until this read has completed.
+     */
+    THREAD_MEMORY_RELEASE();
+
+    return !!res;
+}
+
 
 // TODO actually properly get frequency
 static inline freq_t _ttc_get_freq()
-{
-    return 1 * MHZ;
+{   
+    return  clk_freq;
 }
 
 static inline uint64_t freq_cycles_and_hz_to_ns(uint64_t ncycles, freq_t hz)
@@ -156,27 +174,28 @@ static inline uint64_t freq_cycles_and_hz_to_ns(uint64_t ncycles, freq_t hz)
     return (ncycles * NS_IN_S) / hz;
 }
 
+uint64_t ttc_ticks_to_ns(uint32_t ticks)
+{
+    uint32_t fin = _ttc_get_freq();
+    return freq_cycles_and_hz_to_ns(ticks, fin);
+}
+
 static uint64_t get_ticks(void) {
     volatile struct ttc_tmr_regs *gpt =  (void *) gpt_regs;
 
     uint32_t cnt = *gpt->cnt_val;
-
-    print("*gpt->cnt_val =");
-    puthex64(cnt);
-    print("\n");
-    
     
     // bool interrupt_pending = _ttc_check_interrupt(ttc);
-    bool interrupt_pending = false;
+    bool interrupt_pending = _ttc_check_interrupt(gpt);
     /* Check if there is an interrupt pending, i.e. counter overflowed */
     if (interrupt_pending) {
         /* Re-read the counter again */
         cnt = *gpt->cnt_val;
         /* Bump the hi_time counter now, as there may be latency in serving the interrupt */
-        // overflow_count += ttc_ticks_to_ns(ttc, CNT_MAX);
+        hi_time += ttc_ticks_to_ns(CNT_MAX);
     }
     uint32_t fin = _ttc_get_freq();
-    return overflow_count + freq_cycles_and_hz_to_ns(cnt, fin);}
+    return hi_time + freq_cycles_and_hz_to_ns(cnt, fin);}
 
 u32_t sys_now(void)
 {
@@ -191,13 +210,51 @@ u32_t sys_now(void)
 }
 
 void irq(sel4cp_channel ch)
-{
+{   
+    volatile struct ttc_tmr_regs *regs =  (void *) gpt_regs;
+
+    bool interrupt_pending = _ttc_check_interrupt(regs);
+
+    // this timer is just a timestamp counter, so don't need to differentiate
+    if (interrupt_pending) {
+        /* Check if we already updated the timestamp when reading the time,
+         * the interrupt status register should be empty if we did */
+        hi_time += ttc_ticks_to_ns( CNT_MAX);
+    } else {
+        /* The MATCH0 interrupt is used in oneshot mode. It is enabled when a
+         * oneshot function is called, and disabled here so only one interrupt
+         * is triggered per call. */
+        *regs->int_en &= ~INT_MATCH0;
+    }
+    sys_check_timeouts();
 }
+
+/* FPGA PL Clocks */
+static freq_t _ttc_clk_get_freq(volatile struct ttc_tmr_regs *gpt) {
+    freq_t fin, fout;
+
+    // platsuppport doesn't  seem to have parent so use default freq
+    fin = PCLK_FREQ;
+
+    /* Calculate fout */
+    uint32_t clk_ctrl = *gpt->clk_ctrl;
+    if (clk_ctrl & CLKCTRL_PRESCALE_EN) {
+        fout = fin >> (CLKCTRL_GET_PRESCALE_VAL(clk_ctrl) + 1);
+    } else {
+        fout = fin;
+    }
+    /* Return */
+    return fout;
+}
+
 
 void gpt_init(void)
 {
     volatile struct ttc_tmr_regs *gpt =  (void *) gpt_regs;
 
+    clk_freq = _ttc_clk_get_freq(gpt);
+
+    // disable interrupt
     *gpt->int_en = 0;
     FORCE_READ(gpt->int_sts); /* Clear on read */
     *gpt->cnt_ctrl = CNTCTRL_RST | CNTCTRL_STOP | CNTCTRL_INT | CNTCTRL_MATCH;
@@ -215,6 +272,6 @@ void gpt_init(void)
     // start ttc
     *gpt->cnt_ctrl &= ~CNTCTRL_STOP;
 
-
+    hi_time = 0;
     timers_initialised = 1;
 }

@@ -87,13 +87,14 @@ CORE4FILES=$(LWIPDIR)/core/ipv4/autoip.c \
 # NETIFFILES: Files implementing various generic network interface functions
 NETIFFILES=$(LWIPDIR)/netif/ethernet.c 
 
+UTIL_OBJS := util/util.o util/printf.o
+
 # LWIPFILES: All the above.
 LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES)
 LWIP_OBJS := $(LWIPFILES:.c=.o) lwip.o libsharedringbuffer/shared_ringbuffer.o utilization_socket.o udp_echo_socket.o zcu102_timer.o
 
 UBOOT_OBJS := uboot/miiphyutil.o uboot/marvell.o uboot/phy.o uboot/zynq_gem.o  
 
-UTIL_OBJS := util/util.o util/printf.o
 
 ETH_OBJS := eth.o libsharedringbuffer/shared_ringbuffer.o $(UBOOT_OBJS) $(UTIL_OBJS)
 BENCH_OBJS := benchmark/benchmark.o
