@@ -370,13 +370,12 @@ int zynq_gem_start_send(volatile struct zynq_gem_regs *regs, uintptr_t txbase)
     // int i = 0;
     // for (; i < 20000; i++) {
     //     if ((regs->txsr & ZYNQ_GEM_TSR_DONE) == ZYNQ_GEM_TSR_DONE) {
+    //         print("ZYNQ_GEM_TSR_DONE after i = ");
+    //         puthex64(i);
+    //         print("\n");
     //         break;
     //     }
     // }
-
-    // print("ZYNQ_GEM_TSR_DONE after i = ");
-    // puthex64(i);
-    // print("\n");
 
     return 0;
 }

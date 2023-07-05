@@ -248,6 +248,18 @@ void process_rx_queue(void)
     }
 }
 
+static void
+dump_mac(uint8_t *mac)
+{
+    for (unsigned i = 0; i < 6; i++) {
+        sel4cp_dbg_putc(hexchar((mac[i] >> 4) & 0xf));
+        sel4cp_dbg_putc(hexchar(mac[i] & 0xf));
+        if (i < 5) {
+            sel4cp_dbg_putc(':');
+        }
+    } 
+}
+
 /**
  * Initialise the network interface data structure.
  *
@@ -267,6 +279,11 @@ static err_t ethernet_init(struct netif *netif)
     netif->hwaddr[3] = data->mac[3];
     netif->hwaddr[4] = data->mac[4];
     netif->hwaddr[5] = data->mac[5];
+
+    sel4cp_dbg_puts("lwip mac: ");
+    dump_mac(netif->hwaddr);
+    sel4cp_dbg_puts("\n");
+
     netif->mtu = ETHER_MTU;
     netif->hwaddr_len = ETHARP_HWADDR_LEN;
     netif->output = etharp_output;
@@ -285,18 +302,6 @@ static void netif_status_callback(struct netif *netif)
         print(" is: ");
         print(ip4addr_ntoa(netif_ip4_addr(netif)));
         print("\n");
-    }
-}
-
-static void
-dump_mac(uint8_t *mac)
-{
-    for (unsigned i = 0; i < 6; i++) {
-        sel4cp_dbg_putc(hexchar((mac[i] >> 4) & 0xf));
-        sel4cp_dbg_putc(hexchar(mac[i] & 0xf));
-        if (i < 5) {
-            sel4cp_dbg_putc(':');
-        }
     }
 }
 
@@ -339,13 +344,6 @@ void init_post(void)
     sel4cp_dbg_puts(": init complete -- waiting for notification\n");
 }
 
-void udelay(uint32_t us){
-    volatile int i;
-    for(; us > 0; us--){
-        for(i = 0; i < 100; i++){
-        }
-    }
-}
 
 void init(void)
 {
@@ -355,7 +353,6 @@ void init(void)
     /* Set up shared memory regions */
     ring_init(&state.rx_ring, (ring_buffer_t *)rx_free, (ring_buffer_t *)rx_used, NULL, 1);
     ring_init(&state.tx_ring, (ring_buffer_t *)tx_free, (ring_buffer_t *)tx_used, NULL, 1);
-
 
     for (int i = 0; i < NUM_BUFFERS - 1; i++) {
         ethernet_buffer_t *buffer = &state.buffer_metadata[i];

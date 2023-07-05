@@ -176,7 +176,7 @@ static void fill_rx_bufs()
         int new_tail = idx + 1;
         if (new_tail == ring->cnt) {
             new_tail = 0;
-            stat |= ZYNQ_GEM_TXBUF_WRAP_MASK;
+            // stat |= ZYNQ_GEM_TXBUF_WRAP_MASK;
         }
         ring->cookies[idx] = cookie;
         // update_ring_slot(ring, idx, phys, 0, stat);
@@ -226,21 +226,8 @@ handle_rx(volatile struct zynq_gem_regs *eth)
         void *cookie = ring->cookies[head];        
         unsigned int len = status & ZYNQ_GEM_RXBUF_LEN_MASK;
 
-        // printf_("|handle_rx| packet len = %d\n", len);
-        // printf_("|handle_rx| 0th bytes buffer = ");
-        // uint8_t *packet = &addr;
-        // dump_mac(&packet[0]);
-        // printf_("\n");
-        // printf_("|handle_rx| 6th bytes buffer = ");
-        // dump_mac(&packet[6]);
-        // printf_("\n");
-     
-        // printf_("|handle_rx| 8th bytes buffer = ");
-        // dump_mac(&packet[8]);
-        // printf_("\n");
-        // printf_("|handle_rx| second 14th bytes buffer = ");
-        // dump_mac(&packet[14]);
-        // printf_("\n");
+
+ 
         /* Go to next buffer, handle roll-over. */
         if (++head == ring->cnt) {
             head = 0;
@@ -251,6 +238,17 @@ handle_rx(volatile struct zynq_gem_regs *eth)
         ring->remain++;
 
         buff_desc_t *desc = (buff_desc_t *)cookie;
+
+        printf_("|handle_rx| packet len = %d\n", len);
+        printf_("|handle_rx| desc->encoded_addr = %x\n", desc->encoded_addr);
+
+        // printf_("|handle_rx| 0th bytes buffer = ");
+        // uint8_t *packet = desc->encoded_addr;
+        // dump_mac(&packet[0]);
+        // printf_("\n");
+        // printf_("|handle_rx| 6th bytes buffer = ");
+        // dump_mac(&packet[6]);
+        // printf_("\n");
 
         enqueue_used(&rx_ring, desc->encoded_addr, len, desc->cookie);
         num++;
@@ -270,52 +268,71 @@ handle_rx(volatile struct zynq_gem_regs *eth)
 static void
 complete_tx(volatile struct zynq_gem_regs *eth)
 {
-    // unsigned int cnt_org;
-    // void *cookie;
-    // ring_ctx_t *ring = &tx;
-    // unsigned int head = ring->head;
-    // unsigned int cnt = 0;
+    unsigned int cnt_org;
+    void *cookie;
+    ring_ctx_t *ring = &tx;
+    unsigned int head = ring->head;
+    unsigned int cnt = 0;
 
-    // while (head != ring->tail) {
-    //     if (0 == cnt) {
-    //         cnt = tx_lengths[head];
-    //         if ((0 == cnt) || (cnt > TX_COUNT)) {
-    //             /* We are not supposed to read 0 here. */
-    //             print("complete_tx with cnt=0 or max");
-    //             return;
-    //         }
-    //         cnt_org = cnt;
-    //         cookie = ring->cookies[head];
-    //     }
+    printf_("|complete_tx| called\n");
 
-    //     volatile struct emac_bd *d = &(ring->descr[head]);
+    while (head != ring->tail) {
+        printf_("|complete_Tx| start loop\n");
+        if (0 == cnt) {
+            cnt = tx_lengths[head];
+            if ((0 == cnt) || (cnt > TX_COUNT)) {
+                /* We are not supposed to read 0 here. */
+                print("complete_tx with cnt=0 or max");
+                return;
+            }
+            cnt_org = cnt;
+            cookie = ring->cookies[head];
+        }
 
-    //     /* If this buffer was not sent, we can't release any buffer. */
-    //     if (d->stat & TXD_READY) {
-    //         /* give it another chance */
-    //         if (!(eth->tdar & TDAR_TDAR)) {
-    //             eth->tdar = TDAR_TDAR;
-    //         }
-    //         if (d->stat & TXD_READY) {
-    //             break;
-    //         }
-    //     }
+        volatile struct emac_bd *d = &(ring->descr[head]);
 
-    //     /* Go to next buffer, handle roll-over. */
-    //     if (++head == TX_COUNT) {
-    //         head = 0;
-    //     }
+        /* If this buffer was not sent, we can't release any buffer. */
+        if (!(d->status & ZYNQ_GEM_TXBUF_USED_MASK)) {
+            /* not all parts complete */
+            printf_("|Complete_tx|Not all parts complete\n");
+            return;
+        }
 
-    //     if (0 == --cnt) {
-    //         ring->head = head;
-    //         /* race condition if add/remove is not synchronized. */
-    //         ring->remain += cnt_org;
-    //         /* give the buffer back */
-    //         buff_desc_t *desc = (buff_desc_t *)cookie;
+        printf_("|Complete_tx|descr status = %x\n", d->status);
 
-    //         enqueue_free(&tx_ring, desc->encoded_addr, desc->len, desc->cookie);
-    //     }
-    // }
+        d->status &= (ZYNQ_GEM_TXBUF_USED_MASK | ZYNQ_GEM_TXBUF_WRAP_MASK);
+        d->status |= ZYNQ_GEM_TXBUF_USED_MASK;
+
+        /* do not let memory loads happen before our checking of the descriptor write back */
+        __sync_synchronize();
+
+        printf_("|Complete_tx|descr status after setting values = %x\n", d->status);
+
+
+        /* Go to next buffer, handle roll-over. */
+        if (++head == TX_COUNT) {
+            head = 0;
+        }
+
+        if (0 == --cnt) {
+            ring->head = head;
+            /* race condition if add/remove is not synchronized. */
+            ring->remain += cnt_org;
+            /* give the buffer back */
+            buff_desc_t *desc = (buff_desc_t *)cookie;
+            printf_("|complete_Tx| before enqueue_free\n");
+            enqueue_free(&tx_ring, desc->encoded_addr, desc->len, desc->cookie);
+        }
+    }
+
+    if (ring->head != ring->tail) {
+        uintptr_t ring_phys = hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT);
+        uintptr_t txbase = ring_phys + (uintptr_t)(ring->head * sizeof(struct emac_bd));
+        printf_("|complete_Tx| resending stuff\n");
+        zynq_gem_start_send(eth, txbase);
+    } else {
+        printf_("|complete_Tx| head == tail\n");
+    }
 }
 
 static void
@@ -345,31 +362,40 @@ raw_tx(volatile struct zynq_gem_regs *eth, unsigned int num, uintptr_t *phys,
 
     // TODO need to check if ring->phy is correct
     // uintptr_t txbase = ring->phys + (uintptr_t)(ring->tail * sizeof(struct emac_bd));
-    uintptr_t txbase = lower_32_bits(hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT));
+    uintptr_t ring_phys =  hw_ring_buffer_paddr + (sizeof(struct emac_bd) * RX_COUNT);
+    uintptr_t txbase = ring_phys + (uintptr_t)(ring->tail * sizeof(struct emac_bd));
 
     unsigned int tail = ring->tail;
     unsigned int tail_new = tail;
 
     unsigned int i = num;
     while (i-- > 0) {
+        printf_("In raw_tx send loop\n");
         // uint16_t stat = TXD_READY;
         // if (0 == i) {
         //     stat |= TXD_ADDCRC | TXD_LAST;
         // }
-
-        // unsigned int idx = tail_new;
-        // if (++tail_new == TX_COUNT) {
-        //     tail_new = 0;
-        //     stat |= WRAP;
-        // }
+        // uint32_t stat = 0;
+        unsigned int idx = tail_new;
+        if (++tail_new == TX_COUNT) {
+            tail_new = 0;
+            // stat |= ZYNQ_GEM_TXBUF_WRAP_MASK;
+        }
         // update_ring_slot(ring, idx, *phys++, *len++, stat);
-        unsigned int ring = (tx.tail + i) % tx.cnt;
+        unsigned int ring = (idx + i) % tx.cnt;
+        printf_("In raw_tx send loop phys[i] = 0x%lx len[i] = %d tx.phys = 0x%lx\n", phys[i], len[i], tx.phys);
+
+        // setting physical address for descriptor (where buffer is)
         tx.descr[ring].addr = phys[i];
         tx.descr[ring].status &= ~(ZYNQ_GEM_TXBUF_USED_MASK | ZYNQ_GEM_TXBUF_FRMLEN_MASK | ZYNQ_GEM_TXBUF_LAST_MASK);
+        
+        // adding length to status
         tx.descr[ring].status |= (len[i] & ZYNQ_GEM_TXBUF_FRMLEN_MASK);
         if (i == (num - 1)) {
+            printf_("|raw_tx|Last buffer in current frame\n");
             tx.descr[ring].status |= ZYNQ_GEM_TXBUF_LAST_MASK;
         }
+        printf_("|raw_tx|descr status = %x\n", tx.descr[ring].status);
     }
 
     ring->cookies[tail] = cookie;
@@ -434,10 +460,8 @@ handle_tx(volatile struct zynq_gem_regs *eth)
     // We need to put in an empty condition here. 
     while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
         printf_("|handle_tx| buffer length = %d\n", len);
-
-        
         printf_("|handle_tx| 0th bytes buffer = ");
-        uint8_t *packet = &buffer;
+        uint8_t *packet = buffer;
         dump_mac(&packet[0]);
         printf_("\n");
         printf_("|handle_tx| 6th bytes buffer = ");
@@ -709,6 +733,8 @@ void init_post()
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");
     sel4cp_notify(INIT);
+
+    printf_("===> uintptr size = %d\n", sizeof(uintptr_t));
 
     /* Now take away our scheduling context. Uncomment this for a passive driver. */
     /* have_signal = true;

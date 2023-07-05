@@ -212,6 +212,7 @@ u32_t sys_now(void)
 void irq(sel4cp_channel ch)
 {   
     volatile struct ttc_tmr_regs *regs =  (void *) gpt_regs;
+    sel4cp_dbg_puts("=====================>|irq|lwip timer IRQ\n");
 
     bool interrupt_pending = _ttc_check_interrupt(regs);
 

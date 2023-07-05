@@ -90,7 +90,7 @@ NETIFFILES=$(LWIPDIR)/netif/ethernet.c
 UTIL_OBJS := util/util.o util/printf.o
 
 # LWIPFILES: All the above.
-LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES)
+LWIPFILES=lwip.c $(COREFILES) $(CORE4FILES) $(NETIFFILES) $(UTIL_OBJS)
 LWIP_OBJS := $(LWIPFILES:.c=.o) lwip.o libsharedringbuffer/shared_ringbuffer.o utilization_socket.o udp_echo_socket.o zcu102_timer.o
 
 UBOOT_OBJS := uboot/miiphyutil.o uboot/marvell.o uboot/phy.o uboot/zynq_gem.o  
