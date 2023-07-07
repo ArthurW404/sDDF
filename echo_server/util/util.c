@@ -8,6 +8,19 @@ void _putchar(char character) {
     putC(character);
 }
 
+void
+dump_packet(void *packet_ptr, int len)
+{
+    uint8_t *packet = (uint8_t *) packet_ptr;
+    for (unsigned i = 0; i < len; i++) {
+        sel4cp_dbg_putc(hexchar((packet[i] >> 4) & 0xf));
+        sel4cp_dbg_putc(hexchar(packet[i] & 0xf));
+        if (i < len - 1) {
+            sel4cp_dbg_putc(' ');
+        }
+    } 
+}
+
 static unsigned char mem_block[MALLOC_MEM_SIZE] = {0};
 
 static void *current_ptr = mem_block;

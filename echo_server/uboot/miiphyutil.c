@@ -204,27 +204,27 @@ int mdio_register(struct mii_dev *bus)
 void mdio_list_devices(void)
 {
     struct list_head *entry;
-    printf_("|mdio_list_devices| called");
-    // list_for_each(entry, &mii_devs) {
-    //     int i;
-    //     struct mii_dev *bus = list_entry(entry, struct mii_dev, link);
+    printf_("|mdio_list_devices| called\n");
+    list_for_each(entry, &mii_devs) {
+        int i;
+        struct mii_dev *bus = list_entry(entry, struct mii_dev, link);
 
-    //     printf_("%s:\n", bus->name);
+        printf_("%s:\n", bus->name);
 
-    //     for (i = 0; i < PHY_MAX_ADDR; i++) {
-    //         struct phy_device *phydev = bus->phymap[i];
+        for (i = 0; i < PHY_MAX_ADDR; i++) {
+            struct phy_device *phydev = bus->phymap[i];
 
-    //         if (phydev) {
-    //             printf_("%d - %s", i, phydev->drv->name);
+            if (phydev) {
+                printf_("%d - %s", i, phydev->drv->name);
 
-    //             if (phydev->dev) {
-    //                 printf_(" <--> %s\n", phydev->dev->name);
-    //             } else {
-    //                 printf_("\n");
-    //             }
-    //         }
-    //     }
-    // }
+                if (phydev->dev) {
+                    printf_(" <--> %s\n", phydev->dev->name);
+                } else {
+                    printf_("\n");
+                }
+            }
+        }
+    }
 }
 
 int miiphy_set_current_dev(const char *devname)

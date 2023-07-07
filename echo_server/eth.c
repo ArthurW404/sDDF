@@ -242,6 +242,11 @@ handle_rx(volatile struct zynq_gem_regs *eth)
         printf_("|handle_rx| packet len = %d\n", len);
         printf_("|handle_rx| desc->encoded_addr = %x\n", desc->encoded_addr);
 
+        printf_("|handle_rx| packet = ");
+        dump_packet(desc->encoded_addr, len);
+        printf_("\n");
+     
+
         // printf_("|handle_rx| 0th bytes buffer = ");
         // uint8_t *packet = desc->encoded_addr;
         // dump_mac(&packet[0]);
@@ -333,6 +338,8 @@ complete_tx(volatile struct zynq_gem_regs *eth)
     } else {
         printf_("|complete_Tx| head == tail\n");
     }
+
+    printf_("|complete_tx|frames_txed_ok = %d\n", *((char *)eth + 0x0000000108));
 }
 
 static void
@@ -383,10 +390,13 @@ raw_tx(volatile struct zynq_gem_regs *eth, unsigned int num, uintptr_t *phys,
         }
         // update_ring_slot(ring, idx, *phys++, *len++, stat);
         unsigned int ring = (idx + i) % tx.cnt;
-        printf_("In raw_tx send loop phys[i] = 0x%lx len[i] = %d tx.phys = 0x%lx\n", phys[i], len[i], tx.phys);
+        printf_("In raw_tx send loop phys[i] = 0x%lx len[i] = %d\n", phys[i], len[i]);
 
         // setting physical address for descriptor (where buffer is)
-        tx.descr[ring].addr = phys[i];
+        tx.descr[ring].addr = lower_32_bits(phys[i]);
+#if defined(CONFIG_PHYS_64BIT)
+        tx.descr[ring].addr_hi = upper_32_bits(phys[i]);
+#endif
         tx.descr[ring].status &= ~(ZYNQ_GEM_TXBUF_USED_MASK | ZYNQ_GEM_TXBUF_FRMLEN_MASK | ZYNQ_GEM_TXBUF_LAST_MASK);
         
         // adding length to status
@@ -422,6 +432,9 @@ handle_eth(volatile struct zynq_gem_regs *eth)
 
     // Clear Interrupts
     u32 isr = readl(&eth->isr);
+
+    printf_("|handle_eth| isr = %x\n", isr);
+
     writel(isr, &eth->isr);
     
     // while (e & IRQ_MASK) {
@@ -429,6 +442,9 @@ handle_eth(volatile struct zynq_gem_regs *eth)
         sel4cp_dbg_puts("===> IRQ is a TXCOMPLETE :DD\n");
         /* Clear TX Status register */
         u32 val = readl(&eth->txsr);
+
+        printf_("|handle_eth| tx status = %x\n", val);
+
         writel(val, &eth->txsr);
 
         complete_tx(eth);
@@ -438,6 +454,9 @@ handle_eth(volatile struct zynq_gem_regs *eth)
         sel4cp_dbg_puts("IRQ is a RXCOMPLETE\n");
         /* Clear RX Status register */
         u32 val = readl(&eth->rxsr);
+
+        printf_("|handle_eth| rx status = %x\n", val);
+
         writel(val, &eth->rxsr);
 
         handle_rx(eth);
@@ -460,12 +479,8 @@ handle_tx(volatile struct zynq_gem_regs *eth)
     // We need to put in an empty condition here. 
     while ((tx.remain > 1) && !driver_dequeue(tx_ring.used_ring, &buffer, &len, &cookie)) {
         printf_("|handle_tx| buffer length = %d\n", len);
-        printf_("|handle_tx| 0th bytes buffer = ");
-        uint8_t *packet = buffer;
-        dump_mac(&packet[0]);
-        printf_("\n");
-        printf_("|handle_tx| 6th bytes buffer = ");
-        dump_mac(&packet[6]);
+        printf_("|handle_tx| packet = ");
+        dump_packet(buffer, len);
         printf_("\n");
      
         uintptr_t phys = getPhysAddr(buffer);
@@ -582,16 +597,15 @@ eth_setup(void)
 
     /*  Disable the receiver & transmitter */
     
+    /* 1.4 Disable all interrupts */
+    writel(0x7FFFFFF, &regs->idr);
+
     // 1.1 clear network control register
     writel(0, &regs->nwctrl);
     
     writel(0xFFFFFFFF, &regs->txsr);
     writel(0xFFFFFFFF, &regs->rxsr);
     writel(0, &regs->phymntnc);
-
-
-    /* 1.4 Disable all interrupts */
-    writel(0x7FFFFFF, &regs->idr);
 
     // 1.5 clear gem.receive_q{,1}_ptr and  tx regs
     writel(0, &regs->transmit_q1_ptr);
@@ -618,8 +632,12 @@ eth_setup(void)
     // 3. IO config
 
     // 4. configure PHY
+    uint16_t val;
+    zynq_gem_miiphyread("a", 12, 0x1, &val);
+    printf_("pre config phy status: %x\n", val);
 
-    int phyaddr = -1;
+    // int phyaddr = -1;
+    int phyaddr = 12; // default phy address
     ret = phy_detection(&phyaddr);
     if (ret) {
         print("GEM PHY init failed\n");
@@ -633,7 +651,7 @@ eth_setup(void)
     print("\n");
 
     phy_interface_t interface = PHY_INTERFACE_MODE_MII;
-
+    // phy_interface_t interface = PHY_INTERFACE_MODE_RGMII_ID;
 
     /* interface - look at tsec */
     phydev = phy_connect(bus, phyaddr, dev,
@@ -703,6 +721,15 @@ eth_setup(void)
     sel4cp_dbg_puts("post init MAC: ");
     dump_mac(new_mac);
     sel4cp_dbg_puts("\n");
+
+    printf_("frames_txed_ok = %d\n", *((char *)eth + 0x0000000108));
+
+    // uint16_t val;
+    zynq_gem_miiphyread("a", 12, 0x1, &val);
+    printf_("phy status: %x\n", val);
+
+    zynq_gem_miiphyread("a", 12, 15, &val);
+    printf_("phy status: %x\n", val);
 }
 
 void init_post()
@@ -728,7 +755,6 @@ void init_post()
     /* Read Current Value and Set CopyAll bit */
     uint32_t status = readl(&regs->nwcfg);
     writel(status | ZYNQ_GEM_NWCFG_COPY_ALL, &regs->nwcfg);
-
 
     sel4cp_dbg_puts(sel4cp_name);
     sel4cp_dbg_puts(": init complete -- waiting for interrupt\n");

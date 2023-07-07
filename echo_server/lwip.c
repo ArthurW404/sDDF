@@ -392,7 +392,6 @@ void init(void)
     puthex64(now);
     print("\n");
     
-    
     print("after =");
     puthex64(after);
     print("\n");

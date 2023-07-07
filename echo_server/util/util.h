@@ -61,6 +61,9 @@ typedef volatile struct zynq_uart_regs zynq_uart_regs_t;
 #define unlikely(x) (!!(x))
 #endif
 
+void
+dump_packet(void *packet_ptr, int len);
+
 static void
 putC(uint8_t ch)
 {   

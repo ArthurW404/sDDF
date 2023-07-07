@@ -97,7 +97,7 @@ static u32 phy_setup_op(volatile struct zynq_gem_regs *regs, u32 phy_addr, u32 r
     mgtcr = ZYNQ_GEM_PHYMNTNC_OP_MASK | op |
             (phy_addr << ZYNQ_GEM_PHYMNTNC_PHYAD_SHIFT_MASK) |
             (regnum << ZYNQ_GEM_PHYMNTNC_PHREG_SHIFT_MASK) | *data;
-
+    printf_("|phy_setup_op| mgtcr = %x\n", mgtcr);
     /* Write mgtcr and wait for completion */
     writel(mgtcr, &regs->phymntnc);
 
@@ -364,6 +364,8 @@ int zynq_gem_start_send(volatile struct zynq_gem_regs *regs, uintptr_t txbase)
     writel(upper_32_bits(txbase), &regs->upper_txqbase);
 #endif
 
+    __sync_synchronize();
+    
     /* Start transmit */
     setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_STARTTX_MASK);
 
